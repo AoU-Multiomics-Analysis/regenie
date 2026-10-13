@@ -3,38 +3,44 @@ name: WDL validation
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [main, 'codex/**']
     paths:
-      - ".github/workflows/wdl-validation.yml"
-      - "workflows/**/*.wdl"
+      - 'workflows/**/*.wdl'
+      - 'scripts/*.py'
+      - 'tools/check_terra_wdl.py'
+      - 'tests/**'
+      - 'requirements-dev.txt'
+      - 'examples/**'
+      - '.dockstore.yml'
+      - '.github/workflows/wdl-validation.yml'
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
     paths:
-      - ".github/workflows/wdl-validation.yml"
-      - "workflows/**/*.wdl"
+      - 'workflows/**/*.wdl'
+      - 'scripts/*.py'
+      - 'tools/check_terra_wdl.py'
+      - 'tests/**'
+      - 'requirements-dev.txt'
+      - 'examples/**'
+      - '.dockstore.yml'
+      - '.github/workflows/wdl-validation.yml'
+
+permissions:
+  contents: read
 
 jobs:
-  miniwdl-check:
-    runs-on: ubuntu-latest
-
+  validate:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v7
-
-      - name: Install miniwdl
-        run: pipx install miniwdl
-
-      - name: Check WDLs
-        run: |
-          shopt -s globstar nullglob
-          wdls=(workflows/**/*.wdl)
-
-          if [ ${#wdls[@]} -eq 0 ]; then
-            echo "No WDL files found under workflows/."
-            exit 0
-          fi
-
-          for wdl in "${wdls[@]}"; do
-            echo "Checking ${wdl}"
-            miniwdl check "${wdl}"
-          done
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install validation tools
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check WDL 1.0
+        run: miniwdl check --strict workflows/regenie.wdl
+      - name: Check Terra workflow expressions
+        run: python tools/check_terra_wdl.py workflows/regenie.wdl
+      - name: Test CLI and command-time file localization
+        run: python -m unittest discover -s tests -v
