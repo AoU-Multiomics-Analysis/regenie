@@ -131,6 +131,12 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "height"):
             self.runner.verify_association_outputs("bmi,height", self.work / "results")
 
+    def test_firth_threshold_must_be_strictly_between_zero_and_one(self):
+        for value in ("0", "1", "nan", "inf"):
+            args = self.args("step2", "--firth-threshold", value, "--prediction-list", "pred.list", "--prediction-files", "files.txt")
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "Firth threshold"):
+                self.runner.validate_options(args)
+
 
 if __name__ == "__main__":
     unittest.main()

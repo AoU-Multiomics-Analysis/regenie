@@ -188,8 +188,8 @@ def validate_options(args: argparse.Namespace) -> None:
         raise ValueError("Threads, block size, and minimum case count must be positive. CV folds must be at least 2.")
     if not math.isfinite(args.min_mac) or args.min_mac < 0:
         raise ValueError("Minimum MAC must be a finite, nonnegative number")
-    if not 0 < args.firth_threshold <= 1:
-        raise ValueError("Firth threshold must be greater than zero and no greater than one")
+    if not 0 < args.firth_threshold < 1:
+        raise ValueError("Firth threshold must be greater than zero and less than one")
     if (args.covariate_columns or args.categorical_covariates) and not args.covariates:
         raise ValueError("Selected covariates require a covariate file")
     if args.step == "step1" and not args.extract:

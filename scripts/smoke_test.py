@@ -110,7 +110,7 @@ def test_model(data, work, trait_type, traits, encoding):
         association.mkdir()
         run([sys.executable, RUNNER, "step2", *common_arguments(data, f"chr{chrom}", trait_type, traits, encoding),
              "--prediction-list", str(pred_list), "--prediction-files", str(file_list), "--min-mac", "5",
-             "--firth-threshold", "1", *extra], association)
+             "--firth-threshold", "0.99", *extra], association)
         check_associations(association, traits, chrom)
 
 
