@@ -1,0 +1,6 @@
+*
+!envs/
+!envs/Dockerfile
+!envs/environment.yml
+!scripts/
+!scripts/*.py

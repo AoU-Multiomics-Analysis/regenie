@@ -1,0 +1,25 @@
+{
+  "Regenie.step1_genotypes": {
+    "pgen": "gs://YOUR_BUCKET/step1/whole_genome.pgen",
+    "pvar": "gs://YOUR_BUCKET/step1/whole_genome.pvar",
+    "psam": "gs://YOUR_BUCKET/step1/whole_genome.psam"
+  },
+  "Regenie.step1_variant_ids": "gs://YOUR_BUCKET/step1/common_variant_ids.txt",
+  "Regenie.association_genotypes": [
+    {
+      "pgen": "gs://YOUR_BUCKET/association/whole_genome.pgen",
+      "pvar": "gs://YOUR_BUCKET/association/whole_genome.pvar",
+      "psam": "gs://YOUR_BUCKET/association/whole_genome.psam"
+    }
+  ],
+  "Regenie.phenotypes": "gs://YOUR_BUCKET/phenotypes.txt",
+  "Regenie.phenotype_columns": "disease",
+  "Regenie.covariates": "gs://YOUR_BUCKET/covariates.txt",
+  "Regenie.covariate_columns": "age,sex,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10",
+  "Regenie.categorical_covariates": "sex",
+  "Regenie.trait_type": "binary",
+  "Regenie.binary_encoding": "01",
+  "Regenie.approximate_firth": true,
+  "Regenie.firth_threshold": 0.01,
+  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:REPLACE_WITH_TESTED_IMAGE_DIGEST"
+}
