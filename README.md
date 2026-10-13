@@ -84,7 +84,7 @@ Do not combine quantitative traits and binary traits in one run.
 
 ## Run in Terra
 
-1. Open the successful **Docker Image CI** run in GitHub Actions. Copy the tested image digest from its summary.
+1. Use the tested image digest in the examples, or copy the digest from a later successful **Docker Image CI** run.
 2. Make the image readable by Terra. A new GHCR package can be private. Set its visibility to public, or copy it to an accessible Google Artifact Registry.
 3. Import `workflows/regenie.wdl` into Terra through Dockstore, or add it to the Terra method repository.
 4. Start with [quantitative inputs](examples/quantitative.inputs.json) or [binary inputs](examples/binary.inputs.json).
@@ -126,6 +126,13 @@ Files referenced inside a text or JSON file are not automatically localized by T
 
 ## Container and tests
 
+The [initial image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38427703220) passed.
+This image is readable without registry credentials:
+
+```text
+ghcr.io/aou-multiomics-analysis/regenie@sha256:89ccb345c1fd708ccc1bad6354bbcd563811a436e8f4237e2f351aff7ce681bf
+```
+
 The container uses `mambaorg/micromamba:2.3.3` and these direct dependency versions:
 
 - REGENIE `4.1.2` from bioconda.
@@ -158,7 +165,7 @@ Command tests simulate cloud-to-local File mapping in both tasks. They test safe
 The image smoke test runs real REGENIE. It uses different task directories and cloud metadata in the prediction list.
 
 **Terra validation status:** The complete workflow has not been run on Terra. Syntax checks and synthetic tests do not prove Terra execution.
-No cloud job has been submitted as part of this implementation.
+No Terra job has been submitted as part of this implementation.
 
 ## References
 
