@@ -106,6 +106,31 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing"):
             self.runner.validate_tables(args)
 
+    def test_sample_keep_and_remove_are_combined_before_regenie(self):
+        keep = self.file("keep, samples.txt", "0 s1\n0 s2\n0 s3\n")
+        remove = self.file("remove, samples.txt", "0 s2\n")
+        args = self.args("step1", "--keep", str(keep), "--remove", str(remove))
+        self.assertTrue(hasattr(self.runner, "stage_auxiliary"), "Auxiliary input staging is missing")
+        self.runner.stage_auxiliary(args, self.work / "staged")
+        self.assertIsNone(args.remove)
+        self.assertEqual(Path(args.keep).read_text(), "0 s1\n0 s3\n")
+
+    def test_filter_paths_with_commas_are_staged_as_single_files(self):
+        variant_ids = self.file("variants, common.txt", "v1\nv2\n")
+        args = self.args("step1", "--extract", str(variant_ids))
+        self.assertTrue(hasattr(self.runner, "stage_auxiliary"), "Auxiliary input staging is missing")
+        self.runner.stage_auxiliary(args, self.work / "staged")
+        command = self.runner.regenie_command(args, "inputs/genotypes")
+        value = command[command.index("--extract") + 1]
+        self.assertNotIn(",", value)
+        self.assertEqual(Path(value).read_text(), "v1\nv2\n")
+
+    def test_missing_requested_association_trait_is_an_error(self):
+        self.file("results/assoc_bmi.regenie.gz", "compressed result")
+        self.assertTrue(hasattr(self.runner, "verify_association_outputs"), "Per-trait output check is missing")
+        with self.assertRaisesRegex(ValueError, "height"):
+            self.runner.verify_association_outputs("bmi,height", self.work / "results")
+
 
 if __name__ == "__main__":
     unittest.main()

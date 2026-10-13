@@ -57,6 +57,57 @@ def columns(value: str) -> list[str]:
     return names
 
 
+def sample_pairs(path: str) -> list[tuple[str, str]]:
+    rows = []
+    for number, line in enumerate(Path(path).read_text().splitlines(), 1):
+        if not line.strip():
+            continue
+        fields = line.split()
+        if len(fields) != 2:
+            raise ValueError(f"Sample filter row {number} must contain FID IID with no header")
+        rows.append((fields[0], fields[1]))
+    if not rows or rows[0] == ("FID", "IID"):
+        raise ValueError("Sample filter must contain FID IID pairs with no header")
+    return rows
+
+
+def stage_auxiliary(args: argparse.Namespace, directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("phenotypes", "covariates", "keep", "remove", "extract"):
+        value = getattr(args, name)
+        if value is None:
+            continue
+        source = local_file(value, name)
+        target = directory / f"{name}.txt"
+        if target.is_symlink():
+            target.unlink()
+        elif target.exists():
+            raise ValueError(f"Refusing to replace input file: {target}")
+        target.symlink_to(source)
+        setattr(args, name, str(target))
+    if args.keep:
+        keep = sample_pairs(args.keep)
+    if args.remove:
+        remove = set(sample_pairs(args.remove))
+    if args.keep and args.remove:
+        selected = [pair for pair in keep if pair not in remove]
+        if not selected:
+            raise ValueError("The keep/remove filters leave no selected samples")
+        target = directory / "selected_samples.txt"
+        target.write_text("".join(f"{fid} {iid}\n" for fid, iid in selected))
+        args.keep = str(target)
+        args.remove = None
+        LOG.info("Combined sample filters: %d sample IDs retained", len(selected))
+
+
+def verify_association_outputs(phenotype_columns: str, directory: Path) -> None:
+    for trait in columns(phenotype_columns):
+        path = directory / f"assoc_{trait}.regenie.gz"
+        if not path.is_file():
+            raise ValueError(f"Step 2 did not produce an association file for {trait}. Check sample overlap, trait values, and case counts.")
+        local_file(path, f"association output for {trait}")
+
+
 def prediction_rows(path: Path) -> list[tuple[str, str]]:
     rows = []
     traits = set()
@@ -204,10 +255,7 @@ def main() -> int:
         LOG.info("Check options and localized input files for %s", args.step)
         validate_options(args)
         validate_tables(args)
-        for name in ("phenotypes", "covariates", "keep", "remove", "extract"):
-            value = getattr(args, name)
-            if value is not None:
-                setattr(args, name, str(local_file(value, name)))
+        stage_auxiliary(args, Path("inputs"))
         prefix = stage_genotypes(args.pgen, args.pvar, args.psam, Path("inputs"))
         prediction_list = None
         if args.step == "step2":
@@ -228,8 +276,8 @@ def main() -> int:
                 raise ValueError("Step 1 did not produce predictions for every selected phenotype. Check trait values and case counts.")
             for _, path in rows:
                 local_file(path, "step 1 LOCO prediction")
-        elif not list(Path("results").glob("assoc*.regenie.gz")):
-            raise ValueError("Step 2 did not produce association files")
+        else:
+            verify_association_outputs(args.phenotype_columns, Path("results"))
         LOG.info("REGENIE %s completed", args.step)
         return 0
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

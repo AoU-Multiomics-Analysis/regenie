@@ -71,7 +71,7 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 - `covariates`: table with a header that starts with `FID IID`.
 - `covariate_columns`: selected column names. If absent, REGENIE uses all covariate columns.
 - `categorical_covariates`: names of selected categorical columns.
-- `keep_samples` and `remove_samples`: text files with `FID IID` pairs and no header. Both steps use these filters.
+- `keep_samples` and `remove_samples`: text files with `FID IID` pairs and no header. Both steps use these filters. If both are supplied, the task removes the listed pairs from the keep list and passes one keep file to REGENIE.
 - `association_variant_ids`: variant IDs to retain in step 2.
 - `inverse_normal_transform`: apply rank inverse normal transformation to quantitative traits in both steps. Default: `false`.
 - `approximate_firth`: use approximate Firth correction for binary step 2. Default: `true`.
@@ -79,7 +79,7 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 - `min_mac`: minimum minor allele count in step 2. Default: `5`.
 - `min_case_count`: minimum binary case count. Default: `10`.
 
-If a selected phenotype does not produce step 1 predictions, the task fails with a clear error.
+If a selected phenotype does not produce step 1 predictions or a step 2 association file, the task fails with a clear error.
 Do not combine quantitative traits and binary traits in one run.
 
 ## Run in Terra

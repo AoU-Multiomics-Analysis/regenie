@@ -47,9 +47,9 @@ def generate_data(work):
             bt = int(rng.random() < probability)
             pheno.write(f"{sample} {sample} {qt1:.8f} {qt2:.8f} {bt} {bt + 1}\n")
             covar.write(f"{sample} {sample} {age:.8f} {batch}\n")
-    (work / "variants.txt").write_text("".join(f"v{i + 1}\n" for i in range(200)))
-    (work / "keep.txt").write_text("".join(f"{sample} {sample}\n" for sample in samples))
-    (work / "remove.txt").write_text("".join(f"{sample} {sample}\n" for sample in samples[-5:]))
+    (work / "variants,common.txt").write_text("".join(f"v{i + 1}\n" for i in range(200)))
+    (work / "keep,samples.txt").write_text("".join(f"{sample} {sample}\n" for sample in samples))
+    (work / "remove,samples.txt").write_text("".join(f"{sample} {sample}\n" for sample in samples[-5:]))
     run(["plink2", "--vcf", vcf, "--double-id", "--make-pgen", "--out", work / "whole", "--threads", "2"], work)
     for chrom in (1, 2):
         run(["plink2", "--pfile", work / "whole", "--chr", chrom, "--make-pgen", "--out", work / f"chr{chrom}", "--threads", "2"], work)
@@ -63,8 +63,8 @@ def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):
         "--phenotypes", str(data / "phenotypes.txt"), "--phenotype-columns", phenotype_columns,
         "--trait-type", trait_type, "--binary-encoding", encoding,
         "--covariates", str(data / "covariates.txt"), "--covariate-columns", "age,batch",
-        "--categorical-covariates", "batch", "--keep", str(data / "keep.txt"),
-        "--remove", str(data / "remove.txt"), "--threads", "2", "--block-size", "50",
+        "--categorical-covariates", "batch", "--keep", str(data / "keep,samples.txt"),
+        "--remove", str(data / "remove,samples.txt"), "--threads", "2", "--block-size", "50",
     ])
     return arguments
 
@@ -90,7 +90,7 @@ def test_model(data, work, trait_type, traits, encoding):
     fit.mkdir(parents=True)
     extra = ["--rint"] if trait_type == "quantitative" else []
     run([sys.executable, RUNNER, "step1", *common_arguments(data, "whole", trait_type, traits, encoding),
-         "--extract", str(data / "variants.txt"), "--lowmem", "--cv-folds", "3", *extra], fit)
+         "--extract", str(data / "variants,common.txt"), "--lowmem", "--cv-folds", "3", *extra], fit)
     # Copy files into a separate task directory. The old paths become cloud
     # metadata. Step 2 must use the explicitly localized prediction files.
     localized = work / "localized"

@@ -124,9 +124,11 @@ else:
         work = self.run_task(command, "optional")
         import json
         args = json.loads((work / "argv.json").read_text())
-        for flag in ("--bt", "--cc12", "--firth", "--approx", "--covarFile", "--keep", "--remove", "--extract"):
+        for flag in ("--bt", "--cc12", "--firth", "--approx", "--covarFile", "--keep", "--extract"):
             self.assertIn(flag, args)
-        self.assertEqual(args[args.index("--covarFile") + 1], str((self.localized / "covariates.txt").resolve()))
+        self.assertNotIn("--remove", args)
+        self.assertEqual((work / args[args.index("--covarFile") + 1]).read_text(), "FID IID age batch\n0 s1 40 A\n")
+        self.assertEqual((work / args[args.index("--keep") + 1]).read_text(), "0 s1\n")
 
 
 if __name__ == "__main__":
