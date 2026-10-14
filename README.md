@@ -33,6 +33,8 @@ The pipeline performs single-variant association tests. Prepare genotype QC and 
 
 Use uncompressed PVAR files. Each PGEN, PVAR, and PSAM triplet must describe the same genotype set.
 The three input filenames do not need to share a prefix. The task creates a local prefix after localization.
+The workflow keeps the `PgenFiles` input format and passes each member to a separate task `File` input.
+This lets Cromwell map each genotype path before the command applies shell quoting.
 Use valid, sorted, biallelic variants. Use the same reference build and allele definitions across the two steps.
 The step 1 file set must cover the chromosomes tested in step 2.
 Step 2 samples must have matching step 1 predictions and phenotype IDs.
@@ -166,6 +168,8 @@ python -m unittest discover -s tests -v
 
 The scope checker rejects workflow-scope file-writing functions, including functions in calls, scatters, conditionals, and outputs.
 Command tests simulate cloud-to-local File mapping in both tasks. They test safe quoting with special characters in localized paths.
+GitHub Actions also runs the production workflow graph and command expressions with Cromwell 87 on the local backend.
+This test checks that genotype files, optional files, and prediction files reach commands through localized task paths. It uses a file-checking probe in place of REGENIE and removes the Docker runtime for that test only.
 The image smoke test runs real REGENIE. It uses different task directories and cloud metadata in the prediction list.
 
 **Terra validation status:** The complete workflow has not been run on Terra. Syntax checks and synthetic tests do not prove Terra execution.

@@ -11,7 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class LocalStdLib(WDL.StdLib.Base):
+    def __init__(self, version, localized):
+        super().__init__(version)
+        self.localized = localized
+
     def _devirtualize_filename(self, filename):
+        if filename.startswith("gs://"):
+            return str(self.localized / filename.rsplit("/", 1)[-1])
         return filename
 
 
@@ -58,14 +64,21 @@ else:
 
     def render(self, task_name, extra=None):
         task = next(t for t in self.doc.tasks if t.name == task_name)
+        genotype_files = {suffix: str(self.localized / f"data.{suffix}") for suffix in ("pgen", "pvar", "psam")}
         inputs = {
-            "genotypes": {"pgen": str(self.localized / "data.pgen"), "pvar": str(self.localized / "data.pvar"), "psam": str(self.localized / "data.psam")},
             "phenotypes": str(self.localized / "phenotypes.txt"), "phenotype_columns": "bmi",
             "trait_type": "quantitative", "docker_image": "test:image",
         }
+        if task.available_inputs.has_binding("genotypes"):
+            inputs["genotypes"] = genotype_files
+        else:
+            inputs.update(genotype_files)
         inputs.update(extra or {})
         # Start with cloud File values, including files inside the struct.
-        # Simulate the engine's localization before declarations and commands.
+        # Cromwell maps top-level File identifiers during command evaluation.
+        # A member lookup inside sub(struct.file, ...) does not get that map:
+        # it becomes String before the final placeholder mapper sees it.
+        # Do not pre-map the struct recursively; that hid the Terra failure.
         def cloud_values(value):
             if isinstance(value, dict):
                 return {key: cloud_values(item) for key, item in value.items()}
@@ -76,8 +89,14 @@ else:
             return value
 
         env = WDL.values_from_json(cloud_values(inputs), task.available_inputs)
-        env = WDL.Value.rewrite_env_paths(env, lambda file: str(self.localized / file.value.rsplit("/", 1)[-1]))
-        stdlib = LocalStdLib("1.0")
+        mapped = WDL.Env.Bindings()
+        for binding in env:
+            value = binding.value
+            if not isinstance(value, WDL.Value.Struct):
+                value = WDL.Value.rewrite_paths(value, lambda file: str(self.localized / file.value.rsplit("/", 1)[-1]))
+            mapped = mapped.bind(binding.name, value)
+        env = mapped
+        stdlib = LocalStdLib("1.0", self.localized)
         for decl in [*task.inputs, *task.postinputs]:
             if not env.has_binding(decl.name):
                 value = decl.expr.eval(env, stdlib) if decl.expr else WDL.Value.Null()
