@@ -7,14 +7,9 @@
   "Regenie.step1_variant_ids": "gs://YOUR_BUCKET/step1/common_variant_ids.txt",
   "Regenie.association_genotypes": [
     {
-      "pgen": "gs://YOUR_BUCKET/association/chr1.pgen",
-      "pvar": "gs://YOUR_BUCKET/association/chr1.pvar",
-      "psam": "gs://YOUR_BUCKET/association/chr1.psam"
-    },
-    {
-      "pgen": "gs://YOUR_BUCKET/association/chr2.pgen",
-      "pvar": "gs://YOUR_BUCKET/association/chr2.pvar",
-      "psam": "gs://YOUR_BUCKET/association/chr2.psam"
+      "pgen": "gs://YOUR_BUCKET/step1/whole_genome.pgen",
+      "pvar": "gs://YOUR_BUCKET/step1/whole_genome.pvar",
+      "psam": "gs://YOUR_BUCKET/step1/whole_genome.psam"
     }
   ],
   "Regenie.phenotypes": "gs://YOUR_BUCKET/phenotypes.txt",

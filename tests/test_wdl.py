@@ -60,6 +60,9 @@ else:
     Path(out + "_bmi.regenie.gz").write_text("association\\n")
 ''')
         fake.chmod(0o755)
+        plink = bin_dir / "plink2"
+        plink.write_bytes((ROOT / "tests/fake_plink2.py").read_bytes())
+        plink.chmod(0o755)
         self.env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
 
     def render(self, task_name, extra=None):
@@ -74,6 +77,7 @@ else:
         else:
             inputs.update(genotype_files)
         inputs.update(extra or {})
+        inputs = {key: value for key, value in inputs.items() if task.available_inputs.has_binding(key)}
         # Start with cloud File values, including files inside the struct.
         # Cromwell maps top-level File identifiers during command evaluation.
         # A member lookup inside sub(struct.file, ...) does not get that map:
@@ -108,10 +112,28 @@ else:
         work.mkdir()
         # Use the production runner while retaining the WDL command's arguments.
         command = command.replace("/opt/regenie/scripts/run_regenie.py", shlex.quote(str(ROOT / "scripts/run_regenie.py")))
+        command = command.replace("/opt/regenie/scripts/split_genotypes.py", shlex.quote(str(ROOT / "scripts/split_genotypes.py")))
         result = subprocess.run(["bash", "-c", command], cwd=work, env=self.env, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((work / "INJECTED").exists())
         return work
+
+    def test_split_localizes_cloud_inputs_and_optional_filter_without_shell_expansion(self):
+        import json
+        (self.localized / "data.pvar").write_text("#CHROM POS ID REF ALT\n1 1 v1 A G\n2 2 v2 T C\n")
+        (self.localized / "data.psam").write_text("#IID\ns1\n")
+        for name, extra, chromosomes in (
+            ("split_all", {}, ["1", "2"]),
+            ("split_filter", {"variant_ids": str(self.localized / "variants.txt")}, ["1"]),
+        ):
+            with self.subTest(name=name):
+                work = self.run_task(self.render("SplitGenotypes", extra), name)
+                manifest = json.loads((work / "chromosome_genotypes.json").read_text())
+                self.assertEqual([row["chromosome"] for row in manifest], chromosomes)
+                for row in manifest:
+                    self.assertEqual(Path(row["psam"]).read_text(), "#FID\tIID\tSEX\n0\ts1\t0\n")
+                    self.assertEqual(Path(row["pgen"]).read_text(), "pgen")
+        self.assertEqual((self.localized / "data.psam").read_text(), "#IID\ns1\n")
 
     def test_step1_renders_localized_files_without_shell_expansion(self):
         command = self.render("FitModel", {"variant_ids": str(self.localized / "variants.txt")})

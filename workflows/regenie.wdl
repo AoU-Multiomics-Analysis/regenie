@@ -6,6 +6,13 @@ struct PgenFiles {
   File psam
 }
 
+struct ChromosomePgen {
+  String chromosome
+  File pgen
+  File pvar
+  File psam
+}
+
 workflow Regenie {
   input {
     PgenFiles step1_genotypes
@@ -36,10 +43,13 @@ workflow Regenie {
 
     Int step1_cpu = 8
     Int step2_cpu = 4
+    Int split_cpu = 4
     Int step1_memory_gb = 32
     Int step2_memory_gb = 16
+    Int split_memory_gb = 16
     Int step1_extra_disk_gb = 100
     Int step2_extra_disk_gb = 50
+    Int split_extra_disk_gb = 20
     Int preemptible_attempts = 0
     Int max_retries = 1
   }
@@ -73,11 +83,29 @@ workflow Regenie {
   }
 
   scatter (genotype_set in association_genotypes) {
-    call TestVariants {
+    call SplitGenotypes {
       input:
         pgen = genotype_set.pgen,
         pvar = genotype_set.pvar,
         psam = genotype_set.psam,
+        variant_ids = association_variant_ids,
+        docker_image = docker_image,
+        cpu = split_cpu,
+        memory_gb = split_memory_gb,
+        extra_disk_gb = split_extra_disk_gb,
+        preemptible_attempts = preemptible_attempts,
+        max_retries = max_retries
+    }
+  }
+
+  Array[ChromosomePgen] chromosome_genotypes = flatten(SplitGenotypes.chromosome_genotypes)
+
+  scatter (chromosome_set in chromosome_genotypes) {
+    call TestVariants {
+      input:
+        pgen = chromosome_set.pgen,
+        pvar = chromosome_set.pvar,
+        psam = chromosome_set.psam,
         phenotypes = phenotypes,
         phenotype_columns = phenotype_columns,
         trait_type = trait_type,
@@ -114,15 +142,19 @@ workflow Regenie {
     Array[File] associations = flatten(TestVariants.associations)
     Array[File] step2_logs = TestVariants.regenie_log
     Array[File] step2_task_logs = TestVariants.task_log
+    Array[ChromosomePgen] association_chromosomes = chromosome_genotypes
+    Array[File] split_manifests = SplitGenotypes.manifest
+    Array[Array[File]] split_plink_logs = SplitGenotypes.plink_logs
+    Array[File] split_task_logs = SplitGenotypes.task_log
   }
 
   meta {
-    description: "Fit a whole-genome REGENIE model and test PGEN variants in Terra. Use one trait type per run."
+    description: "Fit a whole-genome REGENIE model, split association genotypes by chromosome, and test variants in Terra."
   }
   parameter_meta {
     step1_genotypes: "Whole-genome PGEN, uncompressed PVAR, and PSAM files."
     step1_variant_ids: "One selected common-variant ID per line, with no header. Select variants before this workflow."
-    association_genotypes: "One or more PGEN file sets. Each set can contain one chromosome or the whole genome."
+    association_genotypes: "One or more PGEN file sets. Each set is split by chromosome before TestVariants. The same whole-genome files can be supplied for both steps."
     phenotypes: "Whitespace-delimited table with a header that starts with FID IID. Use NA for missing traits."
     phenotype_columns: "Optional comma-separated phenotype names. Omit or leave blank to use all columns after FID IID. All selected traits must use the same trait type."
     trait_type: "quantitative or binary."
@@ -133,6 +165,53 @@ workflow Regenie {
     binary_encoding: "01: 0=control and 1=case. 12: 1=control and 2=case."
     step1_extra_disk_gb: "Disk space in addition to localized input size. Include low-memory temporary files and predictions."
     step2_extra_disk_gb: "Disk space in addition to genotype and prediction input size. Include association outputs."
+    split_extra_disk_gb: "Disk space in addition to twice the genotype input size. The split task retains localized inputs and chromosome outputs."
+  }
+}
+
+task SplitGenotypes {
+  input {
+    File pgen
+    File pvar
+    File psam
+    File? variant_ids
+    String docker_image
+    Int cpu = 4
+    Int memory_gb = 16
+    Int extra_disk_gb = 20
+    Int preemptible_attempts = 0
+    Int max_retries = 1
+  }
+
+  Int disk_gb = ceil(2 * size([pgen, pvar, psam], "GB") + size(variant_ids, "GB")) + extra_disk_gb
+  Int plink_memory_mb = floor(memory_gb * 1024 * 0.8)
+
+  command <<<
+    set -euo pipefail
+    echo "[$(date -u +%FT%TZ)] Start genotype split task"
+    python3 /opt/regenie/scripts/split_genotypes.py \
+      --pgen '~{sub(pgen, "'", "'\"'\"'")}' \
+      --pvar '~{sub(pvar, "'", "'\"'\"'")}' \
+      --psam '~{sub(psam, "'", "'\"'\"'")}' \
+      ~{if defined(variant_ids) then "--extract '" + sub(select_first([variant_ids]), "'", "'\"'\"'") + "'" else ""} \
+      --threads ~{cpu} --memory-mb ~{plink_memory_mb} \
+      2>&1 | tee task.log
+    echo "[$(date -u +%FT%TZ)] Genotype split task completed"
+  >>>
+
+  output {
+    Array[ChromosomePgen] chromosome_genotypes = read_json("chromosome_genotypes.json")
+    File manifest = "chromosome_genotypes.json"
+    Array[File] plink_logs = glob("chromosomes/*.log")
+    File task_log = "task.log"
+  }
+  runtime {
+    docker: docker_image
+    cpu: cpu
+    memory: "${memory_gb} GB"
+    disks: "local-disk ${disk_gb} SSD"
+    preemptible: preemptible_attempts
+    maxRetries: max_retries
   }
 }
 
