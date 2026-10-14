@@ -145,11 +145,11 @@ Files referenced inside a text or JSON file are not automatically localized by T
 
 ## Container and tests
 
-The [image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38637465369) passed, including automatic phenotype selection and PSAM inputs with no FID or SEX columns.
+The [image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38647669571) passed, including chromosome splitting, automatic phenotype selection, and PSAM inputs with no FID or SEX columns.
 This image is readable without registry credentials:
 
 ```text
-ghcr.io/aou-multiomics-analysis/regenie@sha256:0431042980177a3ebf4c417498b7df012d18ba388a775b55efe292c5b455ce25
+ghcr.io/aou-multiomics-analysis/regenie@sha256:5e40066dec0e5fbf0e47afed27d12938142f6da942076a8eb4d43ac33258cf51
 ```
 
 The container uses `mambaorg/micromamba:2.3.3` and these direct dependency versions:

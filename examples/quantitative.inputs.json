@@ -18,5 +18,5 @@
   "Regenie.categorical_covariates": "sex,batch",
   "Regenie.trait_type": "quantitative",
   "Regenie.inverse_normal_transform": false,
-  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:0431042980177a3ebf4c417498b7df012d18ba388a775b55efe292c5b455ce25"
+  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:5e40066dec0e5fbf0e47afed27d12938142f6da942076a8eb4d43ac33258cf51"
 }
