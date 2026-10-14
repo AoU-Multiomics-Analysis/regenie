@@ -29,7 +29,6 @@ The pipeline performs single-variant association tests. Prepare genotype QC and 
 | `step1_variant_ids` | Text file, one variant ID per line, no header | Selected common variants for step 1 |
 | `association_genotypes` | Nonempty array of genotype structs | Variant file sets for step 2 |
 | `phenotypes` | Text table with a header that starts with `FID IID` | Trait values |
-| `phenotype_columns` | Comma-separated column names | Traits to analyze |
 | `docker_image` | Image reference, preferably with a digest | Tested software environment |
 
 Use uncompressed PVAR files. Each PGEN, PVAR, and PSAM triplet must describe the same genotype set.
@@ -71,6 +70,7 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 
 ## Optional inputs
 
+- `phenotype_columns`: comma-separated trait names. Leave this field empty in Terra to use all columns after `FID IID` in the phenotype file. In an input JSON, omit the key or use `null`, `""`, or a whitespace-only string. Supply names such as `bmi,height` to run a subset. Both steps read the localized file header and use the same selection rules. All selected columns must use the chosen trait type and binary encoding.
 - `covariates`: table with a header that starts with `FID IID`.
 - `covariate_columns`: selected column names. If absent, REGENIE uses all covariate columns.
 - `categorical_covariates`: names of selected categorical columns.
@@ -146,6 +146,7 @@ Direct versions are pinned. Transitive package builds are resolved during the im
 Use the published image digest to retain the complete tested environment.
 GitHub Actions builds the Linux AMD64 image and runs both REGENIE steps before it publishes the image.
 The smoke test uses 240 synthetic samples, 200 variants, two chromosomes, two quantitative traits, and both binary encodings.
+It tests explicit phenotype selection and selection of all columns with omitted, empty, and whitespace-only values.
 It also tests covariates, sample filters, inverse normal transformation, Firth correction, and prediction path replacement.
 PR builds test the image without publishing it. Push and manual builds publish a `sha-<commit>` tag after the tests pass.
 

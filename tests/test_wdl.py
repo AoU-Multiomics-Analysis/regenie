@@ -100,6 +100,20 @@ else:
         self.assertEqual((work / "inputs/genotypes.pgen").read_text(), "pgen")
         self.assertTrue((work / "results/fit_pred.list").is_file())
 
+    def test_both_tasks_infer_all_traits_from_localized_file_for_empty_selection(self):
+        import json
+        for task_name, extra in {
+            "FitModel": {"variant_ids": str(self.localized / "variants.txt")},
+            "TestVariants": {"prediction_list": str(self.localized / "fit_pred.list"),
+                             "prediction_files": [str(self.localized / "fit_1.loco")]},
+        }.items():
+            for index, selection in enumerate((None, "", "   ")):
+                with self.subTest(task=task_name, selection=selection):
+                    command = self.render(task_name, dict(extra, phenotype_columns=selection))
+                    work = self.run_task(command, f"all_{task_name}_{index}")
+                    arguments = json.loads((work / "argv.json").read_text())
+                    self.assertEqual(arguments[arguments.index("--phenoColList") + 1], "bmi")
+
     def test_step2_lists_localized_files_at_command_time_and_rebinds_cloud_metadata(self):
         command = self.render("TestVariants", {
             "prediction_list": str(self.localized / "fit_pred.list"),

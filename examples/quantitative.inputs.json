@@ -18,7 +18,6 @@
     }
   ],
   "Regenie.phenotypes": "gs://YOUR_BUCKET/phenotypes.txt",
-  "Regenie.phenotype_columns": "bmi,height",
   "Regenie.covariates": "gs://YOUR_BUCKET/covariates.txt",
   "Regenie.covariate_columns": "age,sex,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10,batch",
   "Regenie.categorical_covariates": "sex,batch",

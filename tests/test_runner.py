@@ -26,14 +26,49 @@ class RunnerTests(unittest.TestCase):
         path.write_text(content)
         return path
 
-    def args(self, step="step1", *extra):
+    def args(self, step="step1", *extra, phenotype_columns="bmi"):
+        selection = ["--phenotype-columns", phenotype_columns] if phenotype_columns is not None else []
         return self.runner.parser().parse_args([
             step, "--pgen", str(self.file("a.pgen")),
             "--pvar", str(self.file("b.pvar")),
             "--psam", str(self.file("c.psam")),
             "--phenotypes", str(self.file("phenotypes.txt", "FID IID bmi\n0 s1 2\n")),
-            "--phenotype-columns", "bmi", "--trait-type", "quantitative", *extra,
+            *selection, "--trait-type", "quantitative", *extra,
         ])
+
+    def test_omitted_or_blank_selection_uses_all_header_traits_in_both_steps(self):
+        for step in ("step1", "step2"):
+            for selection in (None, "", " \t "):
+                with self.subTest(step=step, selection=selection):
+                    args = self.args(step, "--extract", "variants.txt", "--prediction-list", "pred.list",
+                                     "--prediction-files", "files.txt", phenotype_columns=selection)
+                    Path(args.phenotypes).write_text("FID IID height bmi\n0 s1 170 22\n")
+                    self.runner.validate_options(args)
+                    self.runner.validate_tables(args)
+                    command = self.runner.regenie_command(args, "inputs/genotypes", "pred.list")
+                    self.assertEqual(command[command.index("--phenoColList") + 1], "height,bmi")
+
+    def test_explicit_selection_keeps_only_requested_traits(self):
+        args = self.args(phenotype_columns="bmi")
+        Path(args.phenotypes).write_text("FID IID height bmi\n0 s1 170 22\n")
+        self.runner.validate_tables(args)
+        command = self.runner.regenie_command(args, "inputs/genotypes")
+        self.assertEqual(command[command.index("--phenoColList") + 1], "bmi")
+
+    def test_inferred_traits_retain_header_and_name_validation(self):
+        for header in ("FID IID\n", "FID IID bmi bmi\n", "FID IID trait/1\n", "FID IID trait,1\n"):
+            with self.subTest(header=header), self.assertRaises(ValueError):
+                args = self.args(phenotype_columns="")
+                Path(args.phenotypes).write_text(header)
+                self.runner.validate_tables(args)
+
+    def test_all_traits_mode_still_requires_every_association_output(self):
+        args = self.args("step2", phenotype_columns="")
+        Path(args.phenotypes).write_text("FID IID bmi height\n0 s1 22 170\n")
+        self.runner.validate_tables(args)
+        self.file("results/assoc_bmi.regenie.gz", "compressed result")
+        with self.assertRaisesRegex(ValueError, "height"):
+            self.runner.verify_association_outputs(args.phenotype_columns, self.work / "results")
 
     def test_unresolved_cloud_uri_reports_localization_error(self):
         for uri in ("gs://bucket/x.pgen", "s3://bucket/x.pgen", "https://host/x.pgen"):

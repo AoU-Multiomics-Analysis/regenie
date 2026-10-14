@@ -65,17 +65,19 @@ def generate_data(work):
             psam.write_text("#IID\n" + "".join(row[1] + "\n" for row in rows[1:]))
 
 
-def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):
+def common_arguments(data, prefix, trait_type, phenotype_columns, encoding, phenotype_file=None):
     arguments = []
     for suffix in ("pgen", "pvar", "psam"):
         arguments.extend(["--" + suffix, str(data / f"{prefix}.{suffix}")])
     arguments.extend([
-        "--phenotypes", str(data / "phenotypes.txt"), "--phenotype-columns", phenotype_columns,
+        "--phenotypes", str(phenotype_file or data / "phenotypes.txt"),
         "--trait-type", trait_type, "--binary-encoding", encoding,
         "--covariates", str(data / "covariates.txt"), "--covariate-columns", "age,batch",
         "--categorical-covariates", "batch", "--keep", str(data / "keep,samples.txt"),
         "--remove", str(data / "remove,samples.txt"), "--threads", "2", "--block-size", "50",
     ])
+    if phenotype_columns is not None:
+        arguments.extend(["--phenotype-columns", phenotype_columns])
     return arguments
 
 
@@ -95,11 +97,20 @@ def check_associations(directory, traits, chrom):
             raise ValueError(f"No finite association statistics: {path}")
 
 
-def test_model(data, work, trait_type, traits, encoding):
+def test_model(data, work, trait_type, traits, encoding, all_phenotypes=False):
     fit = work / "fit"
     fit.mkdir(parents=True)
     extra = ["--rint"] if trait_type == "quantitative" else []
-    run([sys.executable, RUNNER, "step1", *common_arguments(data, "whole", trait_type, traits, encoding),
+    phenotype_file = None
+    selection = traits
+    if all_phenotypes:
+        # All columns in an automatic run must use the selected model/encoding.
+        rows = [line.split() for line in (data / "phenotypes.txt").read_text().splitlines()]
+        indices = [0, 1, *(rows[0].index(trait) for trait in traits.split(","))]
+        phenotype_file = work / "all_phenotypes.txt"
+        phenotype_file.write_text("".join(" ".join(row[i] for i in indices) + "\n" for row in rows))
+        selection = None if trait_type == "quantitative" else ""
+    run([sys.executable, RUNNER, "step1", *common_arguments(data, "whole", trait_type, selection, encoding, phenotype_file),
          "--extract", str(data / "variants,common.txt"), "--lowmem", "--cv-folds", "3", *extra], fit)
     # Copy files into a separate task directory. The old paths become cloud
     # metadata. Step 2 must use the explicitly localized prediction files.
@@ -118,7 +129,8 @@ def test_model(data, work, trait_type, traits, encoding):
     for chrom in (1, 2):
         association = work / f"test_chr{chrom}"
         association.mkdir()
-        run([sys.executable, RUNNER, "step2", *common_arguments(data, f"chr{chrom}", trait_type, traits, encoding),
+        selection = ("" if chrom == 1 else "   ") if all_phenotypes else traits
+        run([sys.executable, RUNNER, "step2", *common_arguments(data, f"chr{chrom}", trait_type, selection, encoding, phenotype_file),
              "--prediction-list", str(pred_list), "--prediction-files", str(file_list), "--min-mac", "5",
              "--firth-threshold", "0.99", *extra], association)
         check_associations(association, traits, chrom)
@@ -134,9 +146,11 @@ def main():
     data = work / "data"
     data.mkdir()
     generate_data(data)
-    for trait_type, traits, encoding in (("quantitative", "qt1,qt2", "01"), ("binary", "bt01", "01"), ("binary", "bt12", "12")):
-        test_model(data, work / f"{trait_type}_{encoding}", trait_type, traits, encoding)
-    LOG.info("Smoke test passed: two quantitative traits, both binary encodings, and two chromosome shards")
+    for trait_type, traits, encoding, automatic in (("quantitative", "qt1,qt2", "01", False),
+                                                   ("quantitative", "qt1,qt2", "01", True),
+                                                   ("binary", "bt01", "01", True), ("binary", "bt12", "12", False)):
+        test_model(data, work / f"{trait_type}_{encoding}_{automatic}", trait_type, traits, encoding, automatic)
+    LOG.info("Smoke test passed: explicit and automatic phenotype selection, two quantitative traits, both binary encodings, and two chromosome shards")
 
 
 if __name__ == "__main__":

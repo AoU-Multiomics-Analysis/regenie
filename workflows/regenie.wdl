@@ -12,7 +12,7 @@ workflow Regenie {
     File step1_variant_ids
     Array[PgenFiles]+ association_genotypes
     File phenotypes
-    String phenotype_columns
+    String? phenotype_columns
     String trait_type = "quantitative"
     String docker_image
 
@@ -120,7 +120,7 @@ workflow Regenie {
     step1_variant_ids: "One selected common-variant ID per line, with no header. Select variants before this workflow."
     association_genotypes: "One or more PGEN file sets. Each set can contain one chromosome or the whole genome."
     phenotypes: "Whitespace-delimited table with a header that starts with FID IID. Use NA for missing traits."
-    phenotype_columns: "Comma-separated phenotype names. All selected traits must use the same trait type."
+    phenotype_columns: "Optional comma-separated phenotype names. Omit or leave blank to use all columns after FID IID. All selected traits must use the same trait type."
     trait_type: "quantitative or binary."
     docker_image: "Publicly readable container image. Use the digest from the GitHub Actions image build."
     covariates: "Optional table with a header that starts with FID IID."
@@ -137,7 +137,7 @@ task FitModel {
     PgenFiles genotypes
     File variant_ids
     File phenotypes
-    String phenotype_columns
+    String? phenotype_columns
     String trait_type
     String docker_image
     File? covariates
@@ -168,7 +168,7 @@ task FitModel {
       --pvar '~{sub(genotypes.pvar, "'", "'\"'\"'")}' \
       --psam '~{sub(genotypes.psam, "'", "'\"'\"'")}' \
       --phenotypes '~{sub(phenotypes, "'", "'\"'\"'")}' \
-      --phenotype-columns '~{sub(phenotype_columns, "'", "'\"'\"'")}' \
+      ~{if defined(phenotype_columns) then "--phenotype-columns '" + sub(select_first([phenotype_columns]), "'", "'\"'\"'") + "'" else ""} \
       --trait-type '~{sub(trait_type, "'", "'\"'\"'")}' \
       --extract '~{sub(variant_ids, "'", "'\"'\"'")}' \
       --binary-encoding '~{sub(binary_encoding, "'", "'\"'\"'")}' \
@@ -205,7 +205,7 @@ task TestVariants {
   input {
     PgenFiles genotypes
     File phenotypes
-    String phenotype_columns
+    String? phenotype_columns
     String trait_type
     String docker_image
     File prediction_list
@@ -245,7 +245,7 @@ task TestVariants {
       --pvar '~{sub(genotypes.pvar, "'", "'\"'\"'")}' \
       --psam '~{sub(genotypes.psam, "'", "'\"'\"'")}' \
       --phenotypes '~{sub(phenotypes, "'", "'\"'\"'")}' \
-      --phenotype-columns '~{sub(phenotype_columns, "'", "'\"'\"'")}' \
+      ~{if defined(phenotype_columns) then "--phenotype-columns '" + sub(select_first([phenotype_columns]), "'", "'\"'\"'") + "'" else ""} \
       --trait-type '~{sub(trait_type, "'", "'\"'\"'")}' \
       --prediction-list '~{sub(prediction_list, "'", "'\"'\"'")}' \
       --prediction-files prediction_files.txt \
