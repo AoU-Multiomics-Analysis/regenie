@@ -59,7 +59,10 @@ def generate_data(work):
         rows = [line.split() for line in psam.read_text().splitlines()]
         if rows[0][:2] != ["#FID", "IID"]:
             raise ValueError("Unexpected PLINK synthetic PSAM header")
-        psam.write_text("\t".join(["#IID", *rows[0][2:]]) + "\n" + "".join("\t".join(row[1:]) + "\n" for row in rows[1:]))
+        if prefix == "chr1":
+            psam.write_text("\t".join(["#IID", *rows[0][2:]]) + "\n" + "".join("\t".join(row[1:]) + "\n" for row in rows[1:]))
+        else:
+            psam.write_text("#IID\n" + "".join(row[1] + "\n" for row in rows[1:]))
 
 
 def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):

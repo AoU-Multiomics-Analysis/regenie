@@ -30,7 +30,7 @@ def local_file(value: str | Path, label: str) -> Path:
     return path
 
 
-def psam_needs_fid(source: Path) -> bool:
+def psam_adjustments(source: Path) -> tuple[bool, bool]:
     header = None
     seen = set()
     with source.open(encoding="utf-8-sig") as handle:
@@ -52,7 +52,7 @@ def psam_needs_fid(source: Path) -> bool:
             seen.add(pair)
     if header is None or not seen:
         raise ValueError("PSAM must contain a header and at least one sample")
-    return missing_fid
+    return missing_fid, "SEX" not in header
 
 
 def stage_genotypes(pgen: str | Path, pvar: str | Path, psam: str | Path, directory: Path) -> Path:
@@ -62,7 +62,7 @@ def stage_genotypes(pgen: str | Path, pvar: str | Path, psam: str | Path, direct
         if magic[:2] == b"\x1f\x8b" or magic == b"\x28\xb5\x2f\xfd":
             raise ValueError("PVAR must be uncompressed. Decompress .pvar.gz or .pvar.zst before the run.")
     directory.mkdir(parents=True, exist_ok=True)
-    missing_fid = psam_needs_fid(sources[2])
+    missing_fid, missing_sex = psam_adjustments(sources[2])
     prefix = directory / "genotypes"
     for source, suffix in zip(sources, ("pgen", "pvar", "psam")):
         target = Path(str(prefix) + "." + suffix)
@@ -70,16 +70,20 @@ def stage_genotypes(pgen: str | Path, pvar: str | Path, psam: str | Path, direct
             target.unlink()
         elif target.exists():
             raise ValueError(f"Refusing to replace an existing input file: {target}")
-        if suffix == "psam" and missing_fid:
+        if suffix == "psam" and (missing_fid or missing_sex):
             with source.open(encoding="utf-8-sig") as reader, target.open("w") as writer:
                 for line in reader:
                     if line.startswith("##"):
                         writer.write(line)
-                    elif line.startswith("#IID"):
-                        writer.write("#FID\t" + "\t".join(["IID", *line.split()[1:]]) + "\n")
                     else:
-                        writer.write("0\t" + "\t".join(line.split()) + "\n")
-            LOG.info("Added FID=0 to the task-local PSAM file")
+                        fields = line.split()
+                        is_header = fields[0] in ("#FID", "#IID")
+                        if missing_fid:
+                            fields = ["#FID", "IID", *fields[1:]] if is_header else ["0", *fields]
+                        if missing_sex:
+                            fields.append("SEX" if is_header else "0")
+                        writer.write("\t".join(fields) + "\n")
+            LOG.info("Prepared task-local PSAM: added zero FID=%s, added unknown SEX=%s", missing_fid, missing_sex)
         else:
             target.symlink_to(source)
     return prefix

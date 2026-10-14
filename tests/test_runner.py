@@ -46,7 +46,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_stage_triplet_with_different_names_and_special_characters(self):
         files = [self.file("a space/'$(touch NEVER); " + suffix) for suffix in ("pgen", "pvar", "psam")]
-        files[2].write_text("#FID IID\n0 s1\n")
+        files[2].write_text("#FID IID SEX\n0 s1 0\n")
         prefix = self.runner.stage_genotypes(*files, self.work / "staged")
         for source, suffix in zip(files, ("pgen", "pvar", "psam")):
             self.assertEqual(Path(str(prefix) + "." + suffix).read_bytes(), source.read_bytes())
@@ -64,6 +64,17 @@ class RunnerTests(unittest.TestCase):
         psam = self.file("samples.psam", original)
         prefix = self.runner.stage_genotypes(self.file("g.pgen"), self.file("v.pvar"), psam, self.work / "staged")
         self.assertEqual(Path(str(prefix) + ".psam").read_text(), original)
+
+    def test_minimal_psam_gets_unknown_sex_for_regenie_compatibility(self):
+        for index, (content, expected) in enumerate((
+            ("#IID\ns1\n", "#FID\tIID\tSEX\n0\ts1\t0\n"),
+            ("#FID IID\nfamily1 s1\n", "#FID\tIID\tSEX\nfamily1\ts1\t0\n"),
+        )):
+            with self.subTest(source=content):
+                psam = self.file("samples.psam", content)
+                prefix = self.runner.stage_genotypes(self.file("g.pgen"), self.file("v.pvar"), psam, self.work / f"staged{index}")
+                self.assertEqual(Path(str(prefix) + ".psam").read_text(), expected)
+                self.assertEqual(psam.read_text(), content)
 
     def test_malformed_psam_is_rejected(self):
         for index, content in enumerate(("#IID SEX\ns1\n", "IID SEX\ns1 2\n", "#FID SEX IID\n0 2 s1\n")):
