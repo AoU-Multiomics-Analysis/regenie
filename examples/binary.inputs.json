@@ -21,5 +21,5 @@
   "Regenie.binary_encoding": "01",
   "Regenie.approximate_firth": true,
   "Regenie.firth_threshold": 0.01,
-  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:89ccb345c1fd708ccc1bad6354bbcd563811a436e8f4237e2f351aff7ce681bf"
+  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:4232a95edf04477deab443032cf8cff01a8fc3cd200e6a9505721230a2795c43"
 }

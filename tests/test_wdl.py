@@ -109,6 +109,18 @@ else:
         self.assertEqual((work / "prediction_files.txt").read_text().strip(), str(self.localized / "fit_1.loco"))
         self.assertNotIn("gs://", (work / "inputs/predictions/predictions.list").read_text())
 
+    def test_both_tasks_normalize_localized_psam_without_fid(self):
+        (self.localized / "data.psam").write_text("#IID SEX\ns1 2\n")
+        inputs = {
+            "FitModel": {"variant_ids": str(self.localized / "variants.txt")},
+            "TestVariants": {"prediction_list": str(self.localized / "fit_pred.list"), "prediction_files": [str(self.localized / "fit_1.loco")]},
+        }
+        for task_name, extra in inputs.items():
+            with self.subTest(task=task_name):
+                work = self.run_task(self.render(task_name, extra), task_name)
+                self.assertEqual((work / "inputs/genotypes.psam").read_text(), "#FID\tIID\tSEX\n0\ts1\t2\n")
+        self.assertEqual((self.localized / "data.psam").read_text(), "#IID SEX\ns1 2\n")
+
     def test_present_optional_files_and_binary_settings_are_rendered_safely(self):
         (self.localized / "covariates.txt").write_text("FID IID age batch\n0 s1 40 A\n")
         (self.localized / "keep.txt").write_text("0 s1\n")

@@ -60,7 +60,10 @@ FID IID disease
 ```
 
 Use IDs that match the PSAM identifiers as read by REGENIE. Do not change FID values between files.
-If the PSAM file omits FID, check the ID convention before preparing phenotype and sample-filter tables.
+If the PSAM file starts with `#IID` and omits FID, each task adds `FID=0` to its local PSAM copy.
+Use `FID=0` with the same IID in phenotype, covariate, and sample-filter tables for these inputs.
+Existing PSAM FID values are preserved. The source PSAM file is not changed.
+If SEX is absent, the local copy adds `SEX=0` (unknown), which also permits minimal ID-only PSAM files with REGENIE 4.1.2.
 Use `NA` for missing traits. The default binary encoding is `0=control, 1=case`.
 Set `binary_encoding` to `12` for `1=control, 2=case`.
 All selected phenotype columns must use the same trait type and binary encoding.
@@ -126,11 +129,11 @@ Files referenced inside a text or JSON file are not automatically localized by T
 
 ## Container and tests
 
-The [initial image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38427703220) passed.
+The [image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38519424381) passed, including PSAM inputs with no FID or SEX columns.
 This image is readable without registry credentials:
 
 ```text
-ghcr.io/aou-multiomics-analysis/regenie@sha256:89ccb345c1fd708ccc1bad6354bbcd563811a436e8f4237e2f351aff7ce681bf
+ghcr.io/aou-multiomics-analysis/regenie@sha256:4232a95edf04477deab443032cf8cff01a8fc3cd200e6a9505721230a2795c43
 ```
 
 The container uses `mambaorg/micromamba:2.3.3` and these direct dependency versions:
