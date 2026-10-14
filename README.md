@@ -14,9 +14,15 @@ Select one trait type for each run.
 
 ## Workflow
 
-1. `FitModel` fits the whole-genome model with selected common variants.
-2. `TestVariants` tests each association file set with the step 1 predictions.
-3. Terra runs the association tasks in parallel. Each file set can contain one chromosome or the whole genome.
+1. `SubsetStep1` uses PLINK 2 to write new PGEN, PVAR, and PSAM files with the common variants in `step1_variant_ids`.
+2. `FitModel` fits the whole-genome model from these smaller files.
+3. `SubsetAssociation` writes each association subset when `association_variant_ids`, `keep_samples`, or `remove_samples` is supplied.
+4. `TestVariants` tests the selected association files with the step 1 predictions.
+
+Each subset task applies the sample keep/remove lists when present. The source files are unchanged.
+If no association variant or sample filters are supplied, step 2 uses the original association files.
+Terra can run the association subsets in parallel with model fitting. Each association test waits for its subset and the model predictions.
+The REGENIE tasks also receive the original selection lists as a second check.
 
 LOCO means leave one chromosome out. REGENIE omits the tested chromosome from each model prediction.
 The pipeline performs single-variant association tests. Prepare genotype QC and the step 1 variant panel before use.
@@ -34,6 +40,8 @@ The pipeline performs single-variant association tests. Prepare genotype QC and 
 
 Use uncompressed PVAR files. Each PGEN, PVAR, and PSAM triplet must describe the same genotype set.
 The three input filenames do not need to share a prefix. The task creates a local prefix after localization.
+You can supply the same whole-genome triplet to `step1_genotypes` and as one item in `association_genotypes`.
+The pipeline creates a separate subset for each step. The common-SNP list does not restrict the step 2 variants.
 Use valid, sorted, biallelic variants. Use the same reference build and allele definitions across the two steps.
 The step 1 file set must cover the chromosomes tested in step 2.
 Step 2 samples must have matching step 1 predictions and phenotype IDs.
@@ -74,8 +82,8 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 - `covariates`: table with a header that starts with `FID IID`.
 - `covariate_columns`: selected column names. If absent, REGENIE uses all covariate columns.
 - `categorical_covariates`: names of selected categorical columns.
-- `keep_samples` and `remove_samples`: text files with `FID IID` pairs and no header. Both steps use these filters. If both are supplied, the task removes the listed pairs from the keep list and passes one keep file to REGENIE.
-- `association_variant_ids`: variant IDs to retain in step 2.
+- `keep_samples` and `remove_samples`: text files with `FID IID` pairs and no header. Both subset tasks apply these filters. If both are supplied, each task uses the keep list minus the remove list.
+- `association_variant_ids`: variant IDs to retain in the PLINK subset for step 2. If absent, retain all variants.
 - `inverse_normal_transform`: apply rank inverse normal transformation to quantitative traits in both steps. Default: `false`.
 - `approximate_firth`: use approximate Firth correction for binary step 2. Default: `true`.
 - `firth_threshold`: apply Firth correction below this p-value. Default: `0.01`.
@@ -111,10 +119,19 @@ Adjust memory and disk for the sample count, variant count, and number of traits
 The defaults are starting values, not validated All of Us capacity estimates.
 The default settings use no preemptible attempts and allow one task retry.
 
+Subset tasks default to 4 CPUs, 16 GB memory, and 20 GB extra disk. Use `subset_cpu`, `subset_memory_gb`, and `subset_extra_disk_gb` to change these settings.
+Each subset task reserves twice the genotype input size, plus its filter files and extra disk, to hold both the source and generated files.
+Terra must still localize the source genotype files for each subset task. The later REGENIE tasks localize the smaller outputs.
+Subsetting adds PLINK compute, file transfer, and output storage. It selects the supplied IDs; it does not recalculate frequencies or perform genotype QC.
+
 ## Outputs
 
 | Output | Contents |
 | --- | --- |
+| `step1_subset_genotypes` | PGEN, PVAR, and PSAM files used for model fitting |
+| `association_genotypes_used` | Selected triplets in the same order as `association_genotypes`; original files when no filters are supplied |
+| `step1_subset_log`, `association_subset_logs` | PLINK logs; association logs are empty when no subset task runs |
+| `step1_subset_task_log`, `association_subset_task_logs` | Subset command logs, including retained variant and sample counts |
 | `associations_by_shard` | Association File arrays in the same order as `association_genotypes` |
 | `associations` | Flat array of gzip-compressed `.regenie.gz` tables |
 | `prediction_list` | Step 1 trait-to-prediction list |
@@ -139,14 +156,16 @@ ghcr.io/aou-multiomics-analysis/regenie@sha256:4232a95edf04477deab443032cf8cff01
 The container uses `mambaorg/micromamba:2.3.3` and these direct dependency versions:
 
 - REGENIE `4.1.2` from bioconda.
-- PLINK 2 `2.0.0a.6.9` from bioconda, used to create synthetic test data.
+- PLINK 2 `2.0.0a.6.9` from bioconda, used for genotype subsetting and synthetic test data.
 - Python `3.11.13` from conda-forge.
 
 Direct versions are pinned. Transitive package builds are resolved during the image build.
 Use the published image digest to retain the complete tested environment.
 GitHub Actions builds the Linux AMD64 image and runs both REGENIE steps before it publishes the image.
-The smoke test uses 240 synthetic samples, 200 variants, two chromosomes, two quantitative traits, and both binary encodings.
-It also tests covariates, sample filters, inverse normal transformation, Firth correction, and prediction path replacement.
+The smoke test starts with 240 synthetic samples and 200 variants on two chromosomes.
+PLINK selects 100 common variants for step 1 and 20 variants for the chromosome 1 association test. It also tests a sample-only subset on chromosome 2.
+The test checks the exact variant IDs and 235 retained sample IDs, then runs two quantitative traits and both binary encodings through REGENIE.
+It also tests covariates, inverse normal transformation, Firth correction, and prediction path replacement.
 PR builds test the image without publishing it. Push and manual builds publish a `sha-<commit>` tag after the tests pass.
 
 Automatic image builds run only when `scripts/*.py` changes. These scripts are copied into the image.
@@ -164,7 +183,7 @@ python -m unittest discover -s tests -v
 ```
 
 The scope checker rejects workflow-scope file-writing functions, including functions in calls, scatters, conditionals, and outputs.
-Command tests simulate cloud-to-local File mapping in both tasks. They test safe quoting with special characters in localized paths.
+Command tests simulate cloud-to-local File mapping in all three tasks. They test safe quoting with special characters in localized paths.
 The image smoke test runs real REGENIE. It uses different task directories and cloud metadata in the prediction list.
 
 **Terra validation status:** The complete workflow has not been run on Terra. Syntax checks and synthetic tests do not prove Terra execution.

@@ -13,6 +13,7 @@ from pathlib import Path
 
 LOG = logging.getLogger("smoke")
 RUNNER = Path(__file__).resolve().with_name("run_regenie.py")
+SUBSETTER = Path(__file__).resolve().with_name("subset_genotypes.py")
 
 
 def run(command, work):
@@ -47,7 +48,8 @@ def generate_data(work):
             bt = int(rng.random() < probability)
             pheno.write(f"0 {sample} {qt1:.8f} {qt2:.8f} {bt} {bt + 1}\n")
             covar.write(f"0 {sample} {age:.8f} {batch}\n")
-    (work / "variants,common.txt").write_text("".join(f"v{i + 1}\n" for i in range(200)))
+    (work / "variants,common.txt").write_text("".join(f"v{i + 1}\n" for i in range(0, 200, 2)))
+    (work / "variants,test.txt").write_text("".join(f"v{i + 1}\n" for i in range(0, 200, 5)))
     (work / "keep,samples.txt").write_text("".join(f"0 {sample}\n" for sample in samples))
     (work / "remove,samples.txt").write_text("".join(f"0 {sample}\n" for sample in samples[-5:]))
     run(["plink2", "--vcf", vcf, "--double-id", "--make-pgen", "--out", work / "whole", "--threads", "2"], work)
@@ -65,10 +67,33 @@ def generate_data(work):
             psam.write_text("#IID\n" + "".join(row[1] + "\n" for row in rows[1:]))
 
 
-def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):
+def subset_data(data, work, prefix, variants):
+    work.mkdir(parents=True)
     arguments = []
     for suffix in ("pgen", "pvar", "psam"):
         arguments.extend(["--" + suffix, str(data / f"{prefix}.{suffix}")])
+    if variants:
+        arguments.extend(["--extract", str(data / variants)])
+    run([sys.executable, SUBSETTER, *arguments, "--keep", str(data / "keep,samples.txt"),
+         "--remove", str(data / "remove,samples.txt"), "--threads", "2", "--memory-mb", "1024"], work)
+    output = work / "results/subset"
+    ids = {row.split()[2] for row in output.with_suffix(".pvar").read_text().splitlines() if not row.startswith("#")}
+    expected = set(range(200)) if prefix == "whole" else set(range(0 if prefix == "chr1" else 100, 100 if prefix == "chr1" else 200))
+    if variants:
+        expected &= set(range(0, 200, 2 if variants == "variants,common.txt" else 5))
+    if ids != {f"v{i + 1}" for i in expected}:
+        raise ValueError(f"PLINK subset has incorrect variant IDs: {output}")
+    rows = [row.split() for row in output.with_suffix(".psam").read_text().splitlines() if not row.startswith("##")]
+    iid_column = rows[0].index("IID") if rows[0][0] == "#FID" else 0
+    if [row[iid_column] for row in rows[1:]] != [f"sample_{i:04d}" for i in range(235)]:
+        raise ValueError(f"PLINK subset has incorrect sample IDs: {output}")
+    return output, ids
+
+
+def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):
+    arguments = []
+    for suffix in ("pgen", "pvar", "psam"):
+        arguments.extend(["--" + suffix, str(prefix) + "." + suffix])
     arguments.extend([
         "--phenotypes", str(data / "phenotypes.txt"), "--phenotype-columns", phenotype_columns,
         "--trait-type", trait_type, "--binary-encoding", encoding,
@@ -79,7 +104,7 @@ def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):
     return arguments
 
 
-def check_associations(directory, traits, chrom):
+def check_associations(directory, traits, chrom, expected_ids):
     for trait in traits.split(","):
         path = directory / "results" / f"assoc_{trait}.regenie.gz"
         with gzip.open(path, "rt") as handle:
@@ -91,15 +116,19 @@ def check_associations(directory, traits, chrom):
         p_index = header.index("LOG10P")
         if any(row[chromosome_index] != str(chrom) for row in rows):
             raise ValueError(f"Association output contains the wrong chromosome: {path}")
+        if {row[header.index("ID")] for row in rows} != expected_ids:
+            raise ValueError(f"Association output does not match the selected variant set: {path}")
+        if any(row[header.index("N")] != "235" for row in rows):
+            raise ValueError(f"Association output does not match the selected sample count: {path}")
         if not any(row[p_index] != "NA" and math.isfinite(float(row[p_index])) for row in rows):
             raise ValueError(f"No finite association statistics: {path}")
 
 
-def test_model(data, work, trait_type, traits, encoding):
+def test_model(data, prepared, work, trait_type, traits, encoding):
     fit = work / "fit"
     fit.mkdir(parents=True)
     extra = ["--rint"] if trait_type == "quantitative" else []
-    run([sys.executable, RUNNER, "step1", *common_arguments(data, "whole", trait_type, traits, encoding),
+    run([sys.executable, RUNNER, "step1", *common_arguments(data, prepared["whole"][0], trait_type, traits, encoding),
          "--extract", str(data / "variants,common.txt"), "--lowmem", "--cv-folds", "3", *extra], fit)
     # Copy files into a separate task directory. The old paths become cloud
     # metadata. Step 2 must use the explicitly localized prediction files.
@@ -118,10 +147,11 @@ def test_model(data, work, trait_type, traits, encoding):
     for chrom in (1, 2):
         association = work / f"test_chr{chrom}"
         association.mkdir()
-        run([sys.executable, RUNNER, "step2", *common_arguments(data, f"chr{chrom}", trait_type, traits, encoding),
+        prefix, expected_ids = prepared[f"chr{chrom}"]
+        run([sys.executable, RUNNER, "step2", *common_arguments(data, prefix, trait_type, traits, encoding),
              "--prediction-list", str(pred_list), "--prediction-files", str(file_list), "--min-mac", "5",
              "--firth-threshold", "0.99", *extra], association)
-        check_associations(association, traits, chrom)
+        check_associations(association, traits, chrom, expected_ids)
 
 
 def main():
@@ -134,9 +164,14 @@ def main():
     data = work / "data"
     data.mkdir()
     generate_data(data)
+    # Exercise a common-SNP subset, an association-variant subset, and a
+    # sample-only subset. REGENIE must consume the new physical PLINK files.
+    prepared = {prefix: subset_data(data, work / f"subset_{prefix}", prefix, variants)
+                for prefix, variants in (("whole", "variants,common.txt"),
+                                         ("chr1", "variants,test.txt"), ("chr2", None))}
     for trait_type, traits, encoding in (("quantitative", "qt1,qt2", "01"), ("binary", "bt01", "01"), ("binary", "bt12", "12")):
-        test_model(data, work / f"{trait_type}_{encoding}", trait_type, traits, encoding)
-    LOG.info("Smoke test passed: two quantitative traits, both binary encodings, and two chromosome shards")
+        test_model(data, prepared, work / f"{trait_type}_{encoding}", trait_type, traits, encoding)
+    LOG.info("Smoke test passed: physical PLINK subsets, two quantitative traits, both binary encodings, and two chromosome shards")
 
 
 if __name__ == "__main__":

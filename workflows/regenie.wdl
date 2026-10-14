@@ -40,13 +40,30 @@ workflow Regenie {
     Int step2_memory_gb = 16
     Int step1_extra_disk_gb = 100
     Int step2_extra_disk_gb = 50
+    Int subset_cpu = 4
+    Int subset_memory_gb = 16
+    Int subset_extra_disk_gb = 20
     Int preemptible_attempts = 0
     Int max_retries = 1
   }
 
-  call FitModel {
+  call SubsetPgen as SubsetStep1 {
     input:
       genotypes = step1_genotypes,
+      variant_ids = step1_variant_ids,
+      keep_samples = keep_samples,
+      remove_samples = remove_samples,
+      docker_image = docker_image,
+      cpu = subset_cpu,
+      memory_gb = subset_memory_gb,
+      extra_disk_gb = subset_extra_disk_gb,
+      preemptible_attempts = preemptible_attempts,
+      max_retries = max_retries
+  }
+
+  call FitModel {
+    input:
+      genotypes = SubsetStep1.subset_genotypes,
       variant_ids = step1_variant_ids,
       phenotypes = phenotypes,
       phenotype_columns = phenotype_columns,
@@ -71,9 +88,25 @@ workflow Regenie {
   }
 
   scatter (genotype_set in association_genotypes) {
+    if (defined(association_variant_ids) || defined(keep_samples) || defined(remove_samples)) {
+      call SubsetPgen as SubsetAssociation {
+        input:
+          genotypes = genotype_set,
+          variant_ids = association_variant_ids,
+          keep_samples = keep_samples,
+          remove_samples = remove_samples,
+          docker_image = docker_image,
+          cpu = subset_cpu,
+          memory_gb = subset_memory_gb,
+          extra_disk_gb = subset_extra_disk_gb,
+          preemptible_attempts = preemptible_attempts,
+          max_retries = max_retries
+      }
+    }
+    PgenFiles selected_genotypes = select_first([SubsetAssociation.subset_genotypes, genotype_set])
     call TestVariants {
       input:
-        genotypes = genotype_set,
+        genotypes = selected_genotypes,
         phenotypes = phenotypes,
         phenotype_columns = phenotype_columns,
         trait_type = trait_type,
@@ -102,6 +135,12 @@ workflow Regenie {
   }
 
   output {
+    PgenFiles step1_subset_genotypes = SubsetStep1.subset_genotypes
+    Array[PgenFiles] association_genotypes_used = selected_genotypes
+    File step1_subset_log = SubsetStep1.plink_log
+    File step1_subset_task_log = SubsetStep1.task_log
+    Array[File] association_subset_logs = select_all(SubsetAssociation.plink_log)
+    Array[File] association_subset_task_logs = select_all(SubsetAssociation.task_log)
     File prediction_list = FitModel.prediction_list
     Array[File] prediction_files = FitModel.prediction_files
     File step1_log = FitModel.regenie_log
@@ -117,8 +156,9 @@ workflow Regenie {
   }
   parameter_meta {
     step1_genotypes: "Whole-genome PGEN, uncompressed PVAR, and PSAM files."
-    step1_variant_ids: "One selected common-variant ID per line, with no header. Select variants before this workflow."
+    step1_variant_ids: "One selected common-variant ID per line, with no header. PLINK writes this subset before REGENIE step 1."
     association_genotypes: "One or more PGEN file sets. Each set can contain one chromosome or the whole genome."
+    association_variant_ids: "Optional variant IDs, one per line. PLINK writes this subset before REGENIE step 2. If absent, retain all variants."
     phenotypes: "Whitespace-delimited table with a header that starts with FID IID. Use NA for missing traits."
     phenotype_columns: "Comma-separated phenotype names. All selected traits must use the same trait type."
     trait_type: "quantitative or binary."
@@ -129,6 +169,58 @@ workflow Regenie {
     binary_encoding: "01: 0=control and 1=case. 12: 1=control and 2=case."
     step1_extra_disk_gb: "Disk space in addition to localized input size. Include low-memory temporary files and predictions."
     step2_extra_disk_gb: "Disk space in addition to genotype and prediction input size. Include association outputs."
+    subset_extra_disk_gb: "Disk space in addition to twice the genotype input size. Each subset task needs space for localized inputs and new PLINK files."
+  }
+}
+
+task SubsetPgen {
+  input {
+    PgenFiles genotypes
+    File? variant_ids
+    File? keep_samples
+    File? remove_samples
+    String docker_image
+    Int cpu = 4
+    Int memory_gb = 16
+    Int extra_disk_gb = 20
+    Int preemptible_attempts = 0
+    Int max_retries = 1
+  }
+
+  Int disk_gb = ceil(2 * size([genotypes.pgen, genotypes.pvar, genotypes.psam], "GB") + size(select_all([variant_ids, keep_samples, remove_samples]), "GB")) + extra_disk_gb
+  Int memory_mb = floor(memory_gb * 1024 * 0.8)
+
+  command <<<
+    set -euo pipefail
+    echo "[$(date -u +%FT%TZ)] Start PLINK subset task"
+    python3 /opt/regenie/scripts/subset_genotypes.py \
+      --pgen '~{sub(genotypes.pgen, "'", "'\"'\"'")}' \
+      --pvar '~{sub(genotypes.pvar, "'", "'\"'\"'")}' \
+      --psam '~{sub(genotypes.psam, "'", "'\"'\"'")}' \
+      --threads ~{cpu} --memory-mb ~{memory_mb} \
+      ~{if defined(variant_ids) then "--extract '" + sub(select_first([variant_ids]), "'", "'\"'\"'") + "'" else ""} \
+      ~{if defined(keep_samples) then "--keep '" + sub(select_first([keep_samples]), "'", "'\"'\"'") + "'" else ""} \
+      ~{if defined(remove_samples) then "--remove '" + sub(select_first([remove_samples]), "'", "'\"'\"'") + "'" else ""} \
+      2>&1 | tee task.log
+    echo "[$(date -u +%FT%TZ)] PLINK subset task completed"
+  >>>
+
+  output {
+    PgenFiles subset_genotypes = object {
+      pgen: "results/subset.pgen",
+      pvar: "results/subset.pvar",
+      psam: "results/subset.psam"
+    }
+    File plink_log = "results/subset.log"
+    File task_log = "task.log"
+  }
+  runtime {
+    docker: docker_image
+    cpu: cpu
+    memory: "${memory_gb} GB"
+    disks: "local-disk ${disk_gb} SSD"
+    preemptible: preemptible_attempts
+    maxRetries: max_retries
   }
 }
 
