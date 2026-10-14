@@ -40,7 +40,7 @@ jobs:
             'set -euo pipefail; python3 /opt/regenie/scripts/smoke_test.py --work-dir /work/smoke 2>&1 | tee /work/smoke.log'
       - name: Upload synthetic test outputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: regenie-synthetic-smoke
           path: test-output/
