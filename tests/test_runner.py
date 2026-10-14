@@ -46,10 +46,33 @@ class RunnerTests(unittest.TestCase):
 
     def test_stage_triplet_with_different_names_and_special_characters(self):
         files = [self.file("a space/'$(touch NEVER); " + suffix) for suffix in ("pgen", "pvar", "psam")]
+        files[2].write_text("#FID IID\n0 s1\n")
         prefix = self.runner.stage_genotypes(*files, self.work / "staged")
         for source, suffix in zip(files, ("pgen", "pvar", "psam")):
             self.assertEqual(Path(str(prefix) + "." + suffix).read_bytes(), source.read_bytes())
         self.assertFalse((self.work / "NEVER").exists())
+
+    def test_iid_only_psam_gets_zero_fid_without_changing_source(self):
+        original = "##source=PLINK2\n#IID\tSEX\ns1\t1\ns2\t2\n"
+        psam = self.file("samples.psam", original)
+        prefix = self.runner.stage_genotypes(self.file("g.pgen"), self.file("v.pvar"), psam, self.work / "staged")
+        self.assertEqual(Path(str(prefix) + ".psam").read_text(), "##source=PLINK2\n#FID\tIID\tSEX\n0\ts1\t1\n0\ts2\t2\n")
+        self.assertEqual(psam.read_text(), original)
+
+    def test_existing_fid_values_are_preserved(self):
+        original = "#FID IID SEX\nfamily1 s1 1\nfamily2 s2 2\n"
+        psam = self.file("samples.psam", original)
+        prefix = self.runner.stage_genotypes(self.file("g.pgen"), self.file("v.pvar"), psam, self.work / "staged")
+        self.assertEqual(Path(str(prefix) + ".psam").read_text(), original)
+
+    def test_malformed_psam_is_rejected(self):
+        for index, content in enumerate(("#IID SEX\ns1\n", "IID SEX\ns1 2\n", "#FID SEX IID\n0 2 s1\n")):
+            with self.subTest(content=content), self.assertRaisesRegex(ValueError, "PSAM"):
+                self.runner.stage_genotypes(self.file("g.pgen"), self.file("v.pvar"), self.file("samples.psam", content), self.work / f"staged{index}")
+
+    def test_duplicate_sample_ids_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            self.runner.stage_genotypes(self.file("g.pgen"), self.file("v.pvar"), self.file("samples.psam", "#IID\ns1\ns1\n"), self.work / "staged")
 
     def test_prediction_paths_are_rebound_to_explicit_localized_files(self):
         pred = self.file("old.list", "bmi gs://old-bucket/fit_1.loco\nheight /old/task/fit_2.loco\n")

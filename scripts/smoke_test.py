@@ -45,14 +45,21 @@ def generate_data(work):
             qt2 = 0.2 * genotypes[105][i] + rng.gauss(0, 1)
             probability = 1 / (1 + math.exp(-(-0.5 + 0.2 * genotypes[5][i] + 0.005 * age)))
             bt = int(rng.random() < probability)
-            pheno.write(f"{sample} {sample} {qt1:.8f} {qt2:.8f} {bt} {bt + 1}\n")
-            covar.write(f"{sample} {sample} {age:.8f} {batch}\n")
+            pheno.write(f"0 {sample} {qt1:.8f} {qt2:.8f} {bt} {bt + 1}\n")
+            covar.write(f"0 {sample} {age:.8f} {batch}\n")
     (work / "variants,common.txt").write_text("".join(f"v{i + 1}\n" for i in range(200)))
-    (work / "keep,samples.txt").write_text("".join(f"{sample} {sample}\n" for sample in samples))
-    (work / "remove,samples.txt").write_text("".join(f"{sample} {sample}\n" for sample in samples[-5:]))
+    (work / "keep,samples.txt").write_text("".join(f"0 {sample}\n" for sample in samples))
+    (work / "remove,samples.txt").write_text("".join(f"0 {sample}\n" for sample in samples[-5:]))
     run(["plink2", "--vcf", vcf, "--double-id", "--make-pgen", "--out", work / "whole", "--threads", "2"], work)
     for chrom in (1, 2):
         run(["plink2", "--pfile", work / "whole", "--chr", chrom, "--make-pgen", "--out", work / f"chr{chrom}", "--threads", "2"], work)
+    # Use standard PLINK 2 IID-only PSAM files. Both REGENIE tasks must add FID=0.
+    for prefix in ("whole", "chr1", "chr2"):
+        psam = work / f"{prefix}.psam"
+        rows = [line.split() for line in psam.read_text().splitlines()]
+        if rows[0][:2] != ["#FID", "IID"]:
+            raise ValueError("Unexpected PLINK synthetic PSAM header")
+        psam.write_text("\t".join(["#IID", *rows[0][2:]]) + "\n" + "".join("\t".join(row[1:]) + "\n" for row in rows[1:]))
 
 
 def common_arguments(data, prefix, trait_type, phenotype_columns, encoding):

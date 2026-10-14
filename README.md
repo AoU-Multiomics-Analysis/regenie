@@ -60,7 +60,9 @@ FID IID disease
 ```
 
 Use IDs that match the PSAM identifiers as read by REGENIE. Do not change FID values between files.
-If the PSAM file omits FID, check the ID convention before preparing phenotype and sample-filter tables.
+If the PSAM file starts with `#IID` and omits FID, each task adds `FID=0` to its local PSAM copy.
+Use `FID=0` with the same IID in phenotype, covariate, and sample-filter tables for these inputs.
+Existing PSAM FID values are preserved. The source PSAM file is not changed.
 Use `NA` for missing traits. The default binary encoding is `0=control, 1=case`.
 Set `binary_encoding` to `12` for `1=control, 2=case`.
 All selected phenotype columns must use the same trait type and binary encoding.
