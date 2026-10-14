@@ -76,15 +76,18 @@ def main() -> None:
         if args.extract:
             source = local_file(args.extract, "association variant IDs")
             selected = set()
-            for number, line in enumerate(source.read_text().splitlines(), 1):
-                fields = line.split()
-                if len(fields) != 1:
-                    raise ValueError(f"Variant filter row {number} must contain one ID with no header")
-                selected.add(fields[0])
+            with source.open() as handle:
+                for number, line in enumerate(handle, 1):
+                    fields = line.split()
+                    if len(fields) != 1:
+                        raise ValueError(f"Variant filter row {number} must contain one ID with no header")
+                    selected.add(fields[0])
             target = Path("inputs/extract.txt")
             target.symlink_to(source)
             args.extract = str(target)
         counts = chromosome_counts(Path(str(prefix) + ".pvar"), selected)
+        # Release the potentially large ID set before PLINK allocates memory.
+        del selected
         if not counts:
             raise ValueError("No association variants remain in this genotype file set. Check association_variant_ids.")
         LOG.info("Start chromosome split: %d variants across %d chromosomes", sum(n for _, n in counts), len(counts))
