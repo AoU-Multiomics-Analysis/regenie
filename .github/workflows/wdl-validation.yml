@@ -44,3 +44,13 @@ jobs:
         run: python tools/check_terra_wdl.py workflows/regenie.wdl
       - name: Test CLI and command-time file localization
         run: python -m unittest discover -s tests -v
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download pinned Cromwell engine
+        run: curl --fail --location --retry 3 --output "$RUNNER_TEMP/cromwell-87.jar" https://github.com/broadinstitute/cromwell/releases/download/87/cromwell-87.jar
+      - name: Test production commands with Cromwell File localization
+        env:
+          CROMWELL_JAR: ${{ runner.temp }}/cromwell-87.jar
+        run: python -m unittest discover -s tests -p test_cromwell.py -v

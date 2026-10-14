@@ -29,11 +29,12 @@ The pipeline performs single-variant association tests. Prepare genotype QC and 
 | `step1_variant_ids` | Text file, one variant ID per line, no header | Selected common variants for step 1 |
 | `association_genotypes` | Nonempty array of genotype structs | Variant file sets for step 2 |
 | `phenotypes` | Text table with a header that starts with `FID IID` | Trait values |
-| `phenotype_columns` | Comma-separated column names | Traits to analyze |
 | `docker_image` | Image reference, preferably with a digest | Tested software environment |
 
 Use uncompressed PVAR files. Each PGEN, PVAR, and PSAM triplet must describe the same genotype set.
 The three input filenames do not need to share a prefix. The task creates a local prefix after localization.
+The workflow keeps the `PgenFiles` input format and passes each member to a separate task `File` input.
+This lets Cromwell map each genotype path before the command applies shell quoting.
 Use valid, sorted, biallelic variants. Use the same reference build and allele definitions across the two steps.
 The step 1 file set must cover the chromosomes tested in step 2.
 Step 2 samples must have matching step 1 predictions and phenotype IDs.
@@ -71,6 +72,7 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 
 ## Optional inputs
 
+- `phenotype_columns`: comma-separated trait names. Leave this field empty in Terra to use all columns after `FID IID` in the phenotype file. In an input JSON, omit the key or use `null`, `""`, or a whitespace-only string. Supply names such as `bmi,height` to run a subset. Both steps read the localized file header and use the same selection rules. All selected columns must use the chosen trait type and binary encoding.
 - `covariates`: table with a header that starts with `FID IID`.
 - `covariate_columns`: selected column names. If absent, REGENIE uses all covariate columns.
 - `categorical_covariates`: names of selected categorical columns.
@@ -129,11 +131,11 @@ Files referenced inside a text or JSON file are not automatically localized by T
 
 ## Container and tests
 
-The [image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38519424381) passed, including PSAM inputs with no FID or SEX columns.
+The [image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38637465369) passed, including automatic phenotype selection and PSAM inputs with no FID or SEX columns.
 This image is readable without registry credentials:
 
 ```text
-ghcr.io/aou-multiomics-analysis/regenie@sha256:4232a95edf04477deab443032cf8cff01a8fc3cd200e6a9505721230a2795c43
+ghcr.io/aou-multiomics-analysis/regenie@sha256:0431042980177a3ebf4c417498b7df012d18ba388a775b55efe292c5b455ce25
 ```
 
 The container uses `mambaorg/micromamba:2.3.3` and these direct dependency versions:
@@ -146,6 +148,7 @@ Direct versions are pinned. Transitive package builds are resolved during the im
 Use the published image digest to retain the complete tested environment.
 GitHub Actions builds the Linux AMD64 image and runs both REGENIE steps before it publishes the image.
 The smoke test uses 240 synthetic samples, 200 variants, two chromosomes, two quantitative traits, and both binary encodings.
+It tests explicit phenotype selection and selection of all columns with omitted, empty, and whitespace-only values.
 It also tests covariates, sample filters, inverse normal transformation, Firth correction, and prediction path replacement.
 PR builds test the image without publishing it. Push and manual builds publish a `sha-<commit>` tag after the tests pass.
 
@@ -165,6 +168,8 @@ python -m unittest discover -s tests -v
 
 The scope checker rejects workflow-scope file-writing functions, including functions in calls, scatters, conditionals, and outputs.
 Command tests simulate cloud-to-local File mapping in both tasks. They test safe quoting with special characters in localized paths.
+GitHub Actions also runs the production workflow graph and command expressions with Cromwell 87 on the local backend.
+This test checks that genotype files, optional files, and prediction files reach commands through localized task paths. It uses a file-checking probe in place of REGENIE and removes the Docker runtime for that test only.
 The image smoke test runs real REGENIE. It uses different task directories and cloud metadata in the prediction list.
 
 **Terra validation status:** The complete workflow has not been run on Terra. Syntax checks and synthetic tests do not prove Terra execution.

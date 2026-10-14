@@ -197,8 +197,9 @@ def rebind_predictions(prediction_list: Path, files: list[Path], directory: Path
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("step", choices=("step1", "step2"))
-    for name in ("pgen", "pvar", "psam", "phenotypes", "phenotype-columns", "trait-type"):
+    for name in ("pgen", "pvar", "psam", "phenotypes", "trait-type"):
         result.add_argument("--" + name, required=True)
+    result.add_argument("--phenotype-columns", help="Comma-separated trait names. Omit or leave blank to use all phenotype columns.")
     for name in ("covariates", "covariate-columns", "categorical-covariates", "keep", "remove", "extract", "prediction-list", "prediction-files"):
         result.add_argument("--" + name)
     result.add_argument("--binary-encoding", choices=("01", "12"), default="01")
@@ -217,7 +218,8 @@ def parser() -> argparse.ArgumentParser:
 def validate_options(args: argparse.Namespace) -> None:
     if args.trait_type not in ("quantitative", "binary"):
         raise ValueError("Trait type must be quantitative or binary")
-    columns(args.phenotype_columns)
+    if args.phenotype_columns and args.phenotype_columns.strip():
+        columns(args.phenotype_columns)
     for value in (args.covariate_columns, args.categorical_covariates):
         if value:
             columns(value)
@@ -249,6 +251,9 @@ def table_header(path: str, label: str) -> list[str]:
 
 def validate_tables(args: argparse.Namespace) -> None:
     header = table_header(args.phenotypes, "phenotype file")
+    if not args.phenotype_columns or not args.phenotype_columns.strip():
+        args.phenotype_columns = ",".join(header)
+        LOG.info("Selected all %d phenotype columns from the localized file header", len(header))
     missing = set(columns(args.phenotype_columns)) - set(header)
     if missing:
         raise ValueError(f"Unknown phenotype columns: {', '.join(sorted(missing))}")

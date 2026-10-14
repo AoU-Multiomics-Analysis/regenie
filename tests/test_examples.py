@@ -9,6 +9,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ExampleTests(unittest.TestCase):
+    def test_workflow_inputs_accept_missing_null_or_blank_phenotype_columns(self):
+        document = WDL.load(str(ROOT / "workflows/regenie.wdl"))
+        original = json.loads((ROOT / "examples/quantitative.inputs.json").read_text())
+        for selection in (None, "", "   "):
+            with self.subTest(selection=selection):
+                inputs = dict(original, **{"Regenie.phenotype_columns": selection})
+                WDL.values_from_json(inputs, document.workflow.available_inputs,
+                                     document.workflow.required_inputs, namespace="Regenie")
+        inputs = {key: value for key, value in original.items() if key != "Regenie.phenotype_columns"}
+        WDL.values_from_json(inputs, document.workflow.available_inputs,
+                             document.workflow.required_inputs, namespace="Regenie")
+
     def test_examples_supply_required_inputs_and_preserve_file_types(self):
         document = WDL.load(str(ROOT / "workflows/regenie.wdl"))
         for path in (ROOT / "examples").glob("*.json"):

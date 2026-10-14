@@ -12,7 +12,7 @@ workflow Regenie {
     File step1_variant_ids
     Array[PgenFiles]+ association_genotypes
     File phenotypes
-    String phenotype_columns
+    String? phenotype_columns
     String trait_type = "quantitative"
     String docker_image
 
@@ -46,7 +46,9 @@ workflow Regenie {
 
   call FitModel {
     input:
-      genotypes = step1_genotypes,
+      pgen = step1_genotypes.pgen,
+      pvar = step1_genotypes.pvar,
+      psam = step1_genotypes.psam,
       variant_ids = step1_variant_ids,
       phenotypes = phenotypes,
       phenotype_columns = phenotype_columns,
@@ -73,7 +75,9 @@ workflow Regenie {
   scatter (genotype_set in association_genotypes) {
     call TestVariants {
       input:
-        genotypes = genotype_set,
+        pgen = genotype_set.pgen,
+        pvar = genotype_set.pvar,
+        psam = genotype_set.psam,
         phenotypes = phenotypes,
         phenotype_columns = phenotype_columns,
         trait_type = trait_type,
@@ -120,7 +124,7 @@ workflow Regenie {
     step1_variant_ids: "One selected common-variant ID per line, with no header. Select variants before this workflow."
     association_genotypes: "One or more PGEN file sets. Each set can contain one chromosome or the whole genome."
     phenotypes: "Whitespace-delimited table with a header that starts with FID IID. Use NA for missing traits."
-    phenotype_columns: "Comma-separated phenotype names. All selected traits must use the same trait type."
+    phenotype_columns: "Optional comma-separated phenotype names. Omit or leave blank to use all columns after FID IID. All selected traits must use the same trait type."
     trait_type: "quantitative or binary."
     docker_image: "Publicly readable container image. Use the digest from the GitHub Actions image build."
     covariates: "Optional table with a header that starts with FID IID."
@@ -134,10 +138,12 @@ workflow Regenie {
 
 task FitModel {
   input {
-    PgenFiles genotypes
+    File pgen
+    File pvar
+    File psam
     File variant_ids
     File phenotypes
-    String phenotype_columns
+    String? phenotype_columns
     String trait_type
     String docker_image
     File? covariates
@@ -158,17 +164,17 @@ task FitModel {
     Int max_retries = 1
   }
 
-  Int disk_gb = ceil(size([genotypes.pgen, genotypes.pvar, genotypes.psam, phenotypes, variant_ids], "GB") + size(covariates, "GB")) + extra_disk_gb
+  Int disk_gb = ceil(size([pgen, pvar, psam, phenotypes, variant_ids], "GB") + size(covariates, "GB")) + extra_disk_gb
 
   command <<<
     set -euo pipefail
     echo "[$(date -u +%FT%TZ)] Start REGENIE model task"
     python3 /opt/regenie/scripts/run_regenie.py step1 \
-      --pgen '~{sub(genotypes.pgen, "'", "'\"'\"'")}' \
-      --pvar '~{sub(genotypes.pvar, "'", "'\"'\"'")}' \
-      --psam '~{sub(genotypes.psam, "'", "'\"'\"'")}' \
+      --pgen '~{sub(pgen, "'", "'\"'\"'")}' \
+      --pvar '~{sub(pvar, "'", "'\"'\"'")}' \
+      --psam '~{sub(psam, "'", "'\"'\"'")}' \
       --phenotypes '~{sub(phenotypes, "'", "'\"'\"'")}' \
-      --phenotype-columns '~{sub(phenotype_columns, "'", "'\"'\"'")}' \
+      ~{if defined(phenotype_columns) then "--phenotype-columns '" + sub(select_first([phenotype_columns]), "'", "'\"'\"'") + "'" else ""} \
       --trait-type '~{sub(trait_type, "'", "'\"'\"'")}' \
       --extract '~{sub(variant_ids, "'", "'\"'\"'")}' \
       --binary-encoding '~{sub(binary_encoding, "'", "'\"'\"'")}' \
@@ -203,9 +209,11 @@ task FitModel {
 
 task TestVariants {
   input {
-    PgenFiles genotypes
+    File pgen
+    File pvar
+    File psam
     File phenotypes
-    String phenotype_columns
+    String? phenotype_columns
     String trait_type
     String docker_image
     File prediction_list
@@ -230,7 +238,7 @@ task TestVariants {
     Int max_retries = 1
   }
 
-  Int disk_gb = ceil(size([genotypes.pgen, genotypes.pvar, genotypes.psam, phenotypes, prediction_list], "GB") + size(prediction_files, "GB") + size(covariates, "GB")) + extra_disk_gb
+  Int disk_gb = ceil(size([pgen, pvar, psam, phenotypes, prediction_list], "GB") + size(prediction_files, "GB") + size(covariates, "GB")) + extra_disk_gb
 
   command <<<
     set -euo pipefail
@@ -241,11 +249,11 @@ task TestVariants {
     ~{sep="\n" prediction_files}
     REGENIE_FILES_70ce88a66f5a40a4914559e3c5b3f6cd
     python3 /opt/regenie/scripts/run_regenie.py step2 \
-      --pgen '~{sub(genotypes.pgen, "'", "'\"'\"'")}' \
-      --pvar '~{sub(genotypes.pvar, "'", "'\"'\"'")}' \
-      --psam '~{sub(genotypes.psam, "'", "'\"'\"'")}' \
+      --pgen '~{sub(pgen, "'", "'\"'\"'")}' \
+      --pvar '~{sub(pvar, "'", "'\"'\"'")}' \
+      --psam '~{sub(psam, "'", "'\"'\"'")}' \
       --phenotypes '~{sub(phenotypes, "'", "'\"'\"'")}' \
-      --phenotype-columns '~{sub(phenotype_columns, "'", "'\"'\"'")}' \
+      ~{if defined(phenotype_columns) then "--phenotype-columns '" + sub(select_first([phenotype_columns]), "'", "'\"'\"'") + "'" else ""} \
       --trait-type '~{sub(trait_type, "'", "'\"'\"'")}' \
       --prediction-list '~{sub(prediction_list, "'", "'\"'\"'")}' \
       --prediction-files prediction_files.txt \
