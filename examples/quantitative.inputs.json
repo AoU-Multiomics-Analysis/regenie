@@ -7,14 +7,9 @@
   "Regenie.step1_variant_ids": "gs://YOUR_BUCKET/step1/common_variant_ids.txt",
   "Regenie.association_genotypes": [
     {
-      "pgen": "gs://YOUR_BUCKET/association/chr1.pgen",
-      "pvar": "gs://YOUR_BUCKET/association/chr1.pvar",
-      "psam": "gs://YOUR_BUCKET/association/chr1.psam"
-    },
-    {
-      "pgen": "gs://YOUR_BUCKET/association/chr2.pgen",
-      "pvar": "gs://YOUR_BUCKET/association/chr2.pvar",
-      "psam": "gs://YOUR_BUCKET/association/chr2.psam"
+      "pgen": "gs://YOUR_BUCKET/step1/whole_genome.pgen",
+      "pvar": "gs://YOUR_BUCKET/step1/whole_genome.pvar",
+      "psam": "gs://YOUR_BUCKET/step1/whole_genome.psam"
     }
   ],
   "Regenie.phenotypes": "gs://YOUR_BUCKET/phenotypes.txt",
@@ -23,5 +18,5 @@
   "Regenie.categorical_covariates": "sex,batch",
   "Regenie.trait_type": "quantitative",
   "Regenie.inverse_normal_transform": false,
-  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:0431042980177a3ebf4c417498b7df012d18ba388a775b55efe292c5b455ce25"
+  "Regenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie@sha256:5e40066dec0e5fbf0e47afed27d12938142f6da942076a8eb4d43ac33258cf51"
 }

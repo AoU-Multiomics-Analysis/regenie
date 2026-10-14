@@ -3,6 +3,7 @@
 
 import argparse
 import gzip
+import json
 import logging
 import math
 import random
@@ -13,6 +14,7 @@ from pathlib import Path
 
 LOG = logging.getLogger("smoke")
 RUNNER = Path(__file__).resolve().with_name("run_regenie.py")
+SPLITTER = Path(__file__).resolve().with_name("split_genotypes.py")
 
 
 def run(command, work):
@@ -51,18 +53,53 @@ def generate_data(work):
     (work / "keep,samples.txt").write_text("".join(f"0 {sample}\n" for sample in samples))
     (work / "remove,samples.txt").write_text("".join(f"0 {sample}\n" for sample in samples[-5:]))
     run(["plink2", "--vcf", vcf, "--double-id", "--make-pgen", "--out", work / "whole", "--threads", "2"], work)
-    for chrom in (1, 2):
-        run(["plink2", "--pfile", work / "whole", "--chr", chrom, "--make-pgen", "--out", work / f"chr{chrom}", "--threads", "2"], work)
-    # Use standard PLINK 2 IID-only PSAM files. Both REGENIE tasks must add FID=0.
-    for prefix in ("whole", "chr1", "chr2"):
-        psam = work / f"{prefix}.psam"
-        rows = [line.split() for line in psam.read_text().splitlines()]
-        if rows[0][:2] != ["#FID", "IID"]:
-            raise ValueError("Unexpected PLINK synthetic PSAM header")
-        if prefix == "chr1":
-            psam.write_text("\t".join(["#IID", *rows[0][2:]]) + "\n" + "".join("\t".join(row[1:]) + "\n" for row in rows[1:]))
-        else:
-            psam.write_text("#IID\n" + "".join(row[1] + "\n" for row in rows[1:]))
+    # Use a standard IID-only PSAM with no SEX. The splitter and REGENIE model
+    # must add local FID=0 and SEX=0 without changing this source file.
+    psam = work / "whole.psam"
+    rows = [line.split() for line in psam.read_text().splitlines()]
+    if rows[0][:2] != ["#FID", "IID"]:
+        raise ValueError("Unexpected PLINK synthetic PSAM header")
+    psam.write_text("#IID\n" + "".join(row[1] + "\n" for row in rows[1:]))
+
+
+def split_data(data):
+    psam_before = (data / "whole.psam").read_bytes()
+    arguments = [value for suffix in ("pgen", "pvar", "psam")
+                 for value in ("--" + suffix, data / f"whole.{suffix}")]
+    all_work = data / "split"
+    all_work.mkdir()
+    run([sys.executable, SPLITTER, *arguments, "--threads", "2", "--memory-mb", "1024"], all_work)
+    manifest = json.loads((all_work / "chromosome_genotypes.json").read_text())
+    if [entry["chromosome"] for entry in manifest] != ["1", "2"]:
+        raise ValueError("Split manifest has unexpected chromosomes")
+    source_variants = [line.split()[:5] for line in (data / "whole.pvar").read_text().splitlines() if not line.startswith("#")]
+    split_variants = [line.split()[:5] for entry in manifest for line in Path(entry["pvar"]).read_text().splitlines() if not line.startswith("#")]
+    if source_variants != split_variants or (data / "whole.psam").read_bytes() != psam_before:
+        raise ValueError("Splitting changed source samples, variant IDs, order, or alleles")
+    # Export hard calls from the source and both outputs. Compare every value
+    # and sample order, so the test also checks the split PGEN content.
+    matrices = []
+    for prefix in [data / "whole", *(Path(entry["pgen"]).with_suffix("") for entry in manifest)]:
+        out = prefix.parent / (prefix.name + "_dosages")
+        run(["plink2", "--pfile", prefix, "--export", "A", "--out", out, "--threads", "2", "--memory", "1024"], data)
+        matrices.append([line.split() for line in Path(str(out) + ".raw").read_text().splitlines()])
+    if matrices[0][0][6:] != matrices[1][0][6:] + matrices[2][0][6:]:
+        raise ValueError("Split genotype columns differ from the source")
+    for whole, first, second in zip(*[matrix[1:] for matrix in matrices], strict=True):
+        if whole[1] != first[1] or whole[1] != second[1] or whole[6:] != first[6:] + second[6:]:
+            raise ValueError("Splitting changed genotype values or sample order")
+    for name, variants, expected_chromosomes in (
+        ("selected", "v2\nv102\n", ["1", "2"]), ("one_chromosome", "v102\n", ["2"]),
+    ):
+        work = data / name
+        work.mkdir()
+        selected = work / "selected.txt"
+        selected.write_text(variants)
+        run([sys.executable, SPLITTER, *arguments, "--extract", selected, "--threads", "2", "--memory-mb", "1024"], work)
+        entries = json.loads((work / "chromosome_genotypes.json").read_text())
+        ids = [line.split()[2] for entry in entries for line in Path(entry["pvar"]).read_text().splitlines() if not line.startswith("#")]
+        if ids != variants.split() or [entry["chromosome"] for entry in entries] != expected_chromosomes:
+            raise ValueError("Split variant selection is incorrect")
 
 
 def common_arguments(data, prefix, trait_type, phenotype_columns, encoding, phenotype_file=None):
@@ -130,7 +167,7 @@ def test_model(data, work, trait_type, traits, encoding, all_phenotypes=False):
         association = work / f"test_chr{chrom}"
         association.mkdir()
         selection = ("" if chrom == 1 else "   ") if all_phenotypes else traits
-        run([sys.executable, RUNNER, "step2", *common_arguments(data, f"chr{chrom}", trait_type, selection, encoding, phenotype_file),
+        run([sys.executable, RUNNER, "step2", *common_arguments(data, f"split/chromosomes/chr{chrom}", trait_type, selection, encoding, phenotype_file),
              "--prediction-list", str(pred_list), "--prediction-files", str(file_list), "--min-mac", "5",
              "--firth-threshold", "0.99", *extra], association)
         check_associations(association, traits, chrom)
@@ -146,11 +183,12 @@ def main():
     data = work / "data"
     data.mkdir()
     generate_data(data)
+    split_data(data)
     for trait_type, traits, encoding, automatic in (("quantitative", "qt1,qt2", "01", False),
                                                    ("quantitative", "qt1,qt2", "01", True),
                                                    ("binary", "bt01", "01", True), ("binary", "bt12", "12", False)):
         test_model(data, work / f"{trait_type}_{encoding}_{automatic}", trait_type, traits, encoding, automatic)
-    LOG.info("Smoke test passed: explicit and automatic phenotype selection, two quantitative traits, both binary encodings, and two chromosome shards")
+    LOG.info("Smoke test passed: chromosome splitting preserves genotypes, filters variants, and feeds both REGENIE trait types")
 
 
 if __name__ == "__main__":
