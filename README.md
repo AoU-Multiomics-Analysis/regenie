@@ -14,14 +14,16 @@ Select one trait type for each run.
 
 ## Workflow
 
-1. `FitModel` fits the whole-genome model with selected common variants.
-2. `SplitGenotypes` uses PLINK 2 to write one PGEN/PVAR/PSAM set per chromosome from each association input set. It applies `association_variant_ids` if supplied.
-3. `TestVariants` tests each chromosome with the step 1 LOCO predictions. Terra can run these tests in parallel.
+1. `PrepareBatches` validates phenotype names and divides them into batches.
+2. `FitModel` fits all selected traits in one job by default. Set `batch_step1=true` to fit each phenotype batch in a separate job. Every fit uses the whole-genome common-variant panel.
+3. `SplitGenotypes` uses PLINK 2 to write one PGEN/PVAR/PSAM set per chromosome from each association input set. It applies `association_variant_ids` if supplied.
+4. `CollectPredictions` collects the model outputs and groups the LOCO files by phenotype batch. `TestVariants` runs one job per chromosome and phenotype batch.
 
 Model fitting and genotype splitting can run at the same time. Association testing waits for both.
 You can supply the same whole-genome triplet to `step1_genotypes` and `association_genotypes`.
 Each split task localizes its source triplet once and writes its chromosome files in sequence.
-Each association task then localizes only its chromosome files. The split files are also workflow outputs for reuse.
+Each association task localizes its chromosome files and only its batch's LOCO files. The full phenotype table is retained; each job selects its batch by column name. Source tables are not modified.
+The split files are also workflow outputs for reuse.
 
 LOCO means leave one chromosome out. REGENIE omits the tested chromosome from each model prediction.
 The pipeline performs single-variant association tests. Prepare genotype QC and the step 1 variant panel before use.
@@ -34,7 +36,6 @@ The pipeline performs single-variant association tests. Prepare genotype QC and 
 | `step1_variant_ids` | Text file, one variant ID per line, no header | Selected common variants for step 1 |
 | `association_genotypes` | Nonempty array of genotype structs | File sets to split by chromosome for step 2 |
 | `phenotypes` | Text table with a header that starts with `FID IID` | Trait values |
-| `docker_image` | Image reference, preferably with a digest | Tested software environment |
 
 Use uncompressed PVAR files. Each PGEN, PVAR, and PSAM triplet must describe the same genotype set.
 The three input filenames do not need to share a prefix. The task creates a local prefix after localization.
@@ -78,6 +79,9 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 ## Optional inputs
 
 - `phenotype_columns`: comma-separated trait names. Leave this field empty in Terra to use all columns after `FID IID` in the phenotype file. In an input JSON, omit the key or use `null`, `""`, or a whitespace-only string. Supply names such as `bmi,height` to run a subset. Both steps read the localized file header and use the same selection rules. All selected columns must use the chosen trait type and binary encoding.
+- `phenotype_batch_size`: traits per association job. Default: `50`. Set to `0` to use one batch with all selected traits. Explicit selections retain their given order; automatic selection retains header order. Negative sizes fail before model fitting.
+- `batch_step1`: default `false`, which shares one Step 1 fit across all batches. Set to `true` to run a Step 1 job for each batch. Separate jobs use less memory per job and can run in parallel, but repeat genotype localization and calculations. With missing phenotypes, separate fits can use different sample sets or cross-validation folds; do not assume exact agreement with a joint fit.
+- `docker_image`: image string. Default: `ghcr.io/aou-multiomics-analysis/regenie:latest`. Omit the input to use that default. Supply another tag or a full `@sha256:...` reference to override it. `latest` can change; a digest fixes the software version for reproducible runs.
 - `covariates`: table with a header that starts with `FID IID`.
 - `covariate_columns`: selected column names. If absent, REGENIE uses all covariate columns.
 - `categorical_covariates`: names of selected categorical columns.
@@ -92,13 +96,19 @@ Column names can contain letters, digits, underscores, dots, and hyphens. Do not
 If a selected phenotype does not produce step 1 predictions or a step 2 association file, the task fails with a clear error.
 Do not combine quantitative traits and binary traits in one run.
 
+For 500 traits, a batch size of 50, and 22 chromosomes, the workflow creates 220 association jobs.
+It creates one Step 1 job by default, or ten when `batch_step1=true`.
+Each association batch downloads and reads its chromosome genotypes again. More parallel jobs can reduce elapsed time while increasing total transfer and compute.
+REGENIE already shares genotype calculations across phenotypes. Its native `--split-l0`, `--run-l0`, and `--run-l1` options parallelize Step 1 by genotype blocks; this workflow uses phenotype batches instead.
+The batch size is a starting value and has not been benchmarked on All of Us data.
+
 ## Run in Terra
 
-1. Use the tested image digest in the examples, or copy the digest from a later successful **Docker Image CI** run.
+1. Omit `docker_image` to use `latest`, or supply the digest from a successful **Docker Image CI** run.
 2. Make the image readable by Terra. A new GHCR package can be private. Set its visibility to public, or copy it to an accessible Google Artifact Registry.
 3. Import `workflows/regenie.wdl` into Terra through Dockstore, or add it to the Terra method repository.
 4. Start with [quantitative inputs](examples/quantitative.inputs.json) or [binary inputs](examples/binary.inputs.json).
-5. Replace the example `gs://YOUR_BUCKET` paths, phenotype names, covariate names, and image digest.
+5. Replace the example `gs://YOUR_BUCKET` paths, phenotype names, and covariate names. Set the batch size and Step 1 batching mode.
 6. Use the input JSON in the Terra method configuration. Review the compute settings before submitting a run.
 
 The example JSON files are workflow inputs. Tasks use typed WDL inputs and named CLI arguments.
@@ -122,22 +132,30 @@ Chromosome splitting does not perform QC or add support for other REGENIE chromo
 Adjust memory and disk for the sample count, variant count, and number of traits.
 The defaults are starting values, not validated All of Us capacity estimates.
 The default settings use no preemptible attempts and allow one task retry.
+`PrepareBatches` uses one CPU, 1 GB RAM, and the phenotype input size plus 1 GB disk.
+`CollectPredictions` uses one CPU, 2 GB RAM, and twice the LOCO input size plus the prediction lists and 5 GB disk. It writes copies with unique filenames so model jobs can safely reuse REGENIE's original basenames.
 
 ## Outputs
 
 | Output | Contents |
 | --- | --- |
-| `associations_by_shard` | Association File arrays aligned with `association_chromosomes` |
+| `associations_by_shard` | Association File arrays aligned with `association_jobs` |
 | `associations` | Flat array of gzip-compressed `.regenie.gz` tables |
+| `association_jobs` | Chromosome-set index, chromosome, phenotype-batch index, and trait names for each association job |
 | `association_chromosomes` | Typed structs with chromosome label and PGEN/PVAR/PSAM File outputs |
+| `phenotype_batches`, `model_batches` | Trait names and zero-based indices for the association and model batches |
+| `phenotype_batch_manifest`, `model_batch_manifest` | JSON batch definitions |
+| `prediction_batches`, `prediction_batch_manifest` | Batch-specific prediction lists and typed LOCO File outputs |
+| `batch_preparation_log`, `prediction_collection_log` | Preparation and collection task logs |
 | `split_manifests` | One JSON output manifest per original association input set |
 | `split_plink_logs`, `split_task_logs` | PLINK logs grouped by source set, and split task logs |
-| `prediction_list` | Step 1 trait-to-prediction list |
-| `prediction_files` | Step 1 LOCO files |
-| `step1_log`, `step2_logs` | REGENIE logs |
-| `step1_task_log`, `step2_task_logs` | Task command logs |
+| `prediction_list`, `prediction_files` | Combined trait-to-prediction list and LOCO files with unique basenames |
+| `step1_logs`, `step1_task_logs` | Logs for every model job, aligned with `model_batches` |
+| `step1_log`, `step1_task_log` | First model job's logs, retained for compatibility |
+| `step2_logs`, `step2_task_logs` | Association logs aligned with `association_jobs` |
 
-Results remain separate by chromosome and phenotype. `association_chromosomes`, `associations_by_shard`, and step 2 logs use the same order: source input order, then chromosome order (1–22, X, Y, XY, MT).
+Results remain separate by chromosome and phenotype. `association_jobs`, `associations_by_shard`, and Step 2 logs use the same order: source input order, chromosome order (1–22, X, Y, XY, MT), then phenotype-batch order.
+Each job's `chromosome_set_index` identifies its entry in `association_chromosomes`.
 An input that already contains one chromosome produces one chromosome set. Separate inputs are not merged or deduplicated.
 Files from different shards can have the same basename. Keep the Terra task directory paths when downloading results.
 The prediction list contains task-local path metadata. To reuse predictions, supply the LOCO files as explicit File inputs and rebuild the list.
@@ -145,11 +163,10 @@ Files referenced inside a text or JSON file are not automatically localized by T
 
 ## Container and tests
 
-The [image build and smoke test](https://github.com/AoU-Multiomics-Analysis/regenie/actions/runs/38647669571) passed, including chromosome splitting, automatic phenotype selection, and PSAM inputs with no FID or SEX columns.
-This image is readable without registry credentials:
+The default image is:
 
 ```text
-ghcr.io/aou-multiomics-analysis/regenie@sha256:5e40066dec0e5fbf0e47afed27d12938142f6da942076a8eb4d43ac33258cf51
+ghcr.io/aou-multiomics-analysis/regenie:latest
 ```
 
 The container uses `mambaorg/micromamba:2.3.3` and these direct dependency versions:
@@ -166,7 +183,9 @@ It tests explicit phenotype selection and selection of all columns with omitted,
 It also tests covariates, sample filters, inverse normal transformation, Firth correction, and prediction path replacement.
 The split test compares all synthetic genotype values, samples, variant IDs, and alleles with the source.
 It checks optional variant selection, including a selection that retains only one chromosome.
+It also compares joint and batched association results for complete quantitative and binary phenotypes, using both shared and separate Step 1 fits. The comparison checks variant identity, alleles, sample counts, effect estimates, standard errors, and test statistics.
 PR builds test the image without publishing it. Push and manual builds publish a `sha-<commit>` tag after the tests pass.
+Successful main-branch pushes also update `main` and `latest`. For a manual release, select **Promote the tested image to latest** when dispatching the image workflow. Feature-branch pushes and manual runs with promotion disabled do not change `latest`.
 
 Automatic image builds run only when `scripts/*.py` changes. These scripts are copied into the image.
 Use **Run workflow** after a Dockerfile or dependency-only change.
@@ -183,9 +202,10 @@ python -m unittest discover -s tests -v
 ```
 
 The scope checker rejects workflow-scope file-writing functions, including functions in calls, scatters, conditionals, and outputs.
-Command tests simulate cloud-to-local File mapping in all three tasks. They test safe quoting with special characters in localized paths.
+Command tests simulate cloud-to-local File mapping in all five tasks. They test safe quoting with special characters in localized paths.
 GitHub Actions also runs the production workflow graph and command expressions with Cromwell 87 on the local backend.
 This test checks that genotype files, optional files, and prediction files reach commands through localized task paths. It also checks that the split JSON output becomes typed chromosome File outputs and reaches the second scatter.
+It runs both shared and separate model fits with two phenotype batches and two chromosomes. It checks that each association task receives only its batch's predictions and that identical model-output basenames do not mix traits.
 It uses computation probes in place of PLINK and REGENIE and removes the Docker runtime for that test only.
 The image smoke test runs real PLINK and REGENIE. It uses different task directories and cloud metadata in the prediction list.
 

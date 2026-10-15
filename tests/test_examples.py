@@ -9,6 +9,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ExampleTests(unittest.TestCase):
+    def test_image_can_use_workflow_default_or_explicit_override(self):
+        document = WDL.load(str(ROOT / "workflows/regenie.wdl"))
+        inputs = json.loads((ROOT / "examples/quantitative.inputs.json").read_text())
+        inputs.pop("Regenie.docker_image", None)
+        WDL.values_from_json(inputs, document.workflow.available_inputs,
+                             document.workflow.required_inputs, namespace="Regenie")
+        inputs["Regenie.docker_image"] = "registry.example.org/regenie@sha256:" + "a" * 64
+        values = WDL.values_from_json(inputs, document.workflow.available_inputs,
+                                      document.workflow.required_inputs, namespace="Regenie")
+        self.assertEqual(values.resolve("docker_image").value, inputs["Regenie.docker_image"])
+
     def test_workflow_inputs_accept_missing_null_or_blank_phenotype_columns(self):
         document = WDL.load(str(ROOT / "workflows/regenie.wdl"))
         original = json.loads((ROOT / "examples/quantitative.inputs.json").read_text())

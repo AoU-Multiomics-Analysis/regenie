@@ -113,10 +113,34 @@ else:
         # Use the production runner while retaining the WDL command's arguments.
         command = command.replace("/opt/regenie/scripts/run_regenie.py", shlex.quote(str(ROOT / "scripts/run_regenie.py")))
         command = command.replace("/opt/regenie/scripts/split_genotypes.py", shlex.quote(str(ROOT / "scripts/split_genotypes.py")))
+        for script in ("prepare_batches.py", "collect_predictions.py"):
+            command = command.replace("/opt/regenie/scripts/" + script, shlex.quote(str(ROOT / "scripts" / script)))
         result = subprocess.run(["bash", "-c", command], cwd=work, env=self.env, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((work / "INJECTED").exists())
         return work
+
+    def test_batch_planner_uses_localized_phenotypes_and_both_model_modes(self):
+        import json
+        (self.localized / "phenotypes.txt").write_text("FID IID bmi height other\n0 s1 2 3 4\n")
+        for mode in (False, True):
+            work = self.run_task(self.render("PrepareBatches", {"phenotype_columns": None,
+                                 "batch_size": 2, "batch_step1": mode}), f"plan_{mode}")
+            self.assertEqual((work / "selected_phenotypes.txt").read_text().strip(), "bmi,height,other")
+            self.assertEqual(len(json.loads((work / "phenotype_batches.json").read_text())), 2)
+            self.assertEqual(len(json.loads((work / "model_batches.json").read_text())), 2 if mode else 1)
+
+    def test_collector_lists_localized_array_inputs_before_reading_model_outputs(self):
+        import json
+        work = self.run_task(self.render("CollectPredictions", {
+            "prediction_lists": [str(self.localized / "fit_pred.list")],
+            "prediction_files": [str(self.localized / "fit_1.loco")],
+            "prediction_file_counts": [1], "batch_size": 1,
+        }), "collect")
+        entries = json.loads((work / "results/prediction_batches.json").read_text())
+        self.assertEqual(entries[0]["phenotype_columns"], "bmi")
+        self.assertEqual(Path(entries[0]["prediction_files"][0]).read_text(), "prediction\n")
+        self.assertNotIn("gs://", (work / "prediction_lists.txt").read_text())
 
     def test_split_localizes_cloud_inputs_and_optional_filter_without_shell_expansion(self):
         import json

@@ -13,6 +13,25 @@ struct ChromosomePgen {
   File psam
 }
 
+struct PhenotypeBatch {
+  Int batch_index
+  String phenotype_columns
+}
+
+struct PredictionBatch {
+  Int batch_index
+  String phenotype_columns
+  File prediction_list
+  Array[File] prediction_files
+}
+
+struct AssociationJob {
+  Int chromosome_set_index
+  String chromosome
+  Int phenotype_batch_index
+  String phenotype_columns
+}
+
 workflow Regenie {
   input {
     PgenFiles step1_genotypes
@@ -21,7 +40,9 @@ workflow Regenie {
     File phenotypes
     String? phenotype_columns
     String trait_type = "quantitative"
-    String docker_image
+    String docker_image = "ghcr.io/aou-multiomics-analysis/regenie:latest"
+    Int phenotype_batch_size = 50
+    Boolean batch_step1 = false
 
     File? covariates
     String? covariate_columns
@@ -54,30 +75,55 @@ workflow Regenie {
     Int max_retries = 1
   }
 
-  call FitModel {
+  call PrepareBatches {
     input:
-      pgen = step1_genotypes.pgen,
-      pvar = step1_genotypes.pvar,
-      psam = step1_genotypes.psam,
-      variant_ids = step1_variant_ids,
       phenotypes = phenotypes,
       phenotype_columns = phenotype_columns,
-      trait_type = trait_type,
+      batch_size = phenotype_batch_size,
+      batch_step1 = batch_step1,
       docker_image = docker_image,
-      covariates = covariates,
-      covariate_columns = covariate_columns,
-      categorical_covariates = categorical_covariates,
-      keep_samples = keep_samples,
-      remove_samples = remove_samples,
-      binary_encoding = binary_encoding,
-      inverse_normal_transform = inverse_normal_transform,
-      min_case_count = min_case_count,
-      cv_folds = cv_folds,
-      lowmem = lowmem,
-      block_size = step1_block_size,
-      cpu = step1_cpu,
-      memory_gb = step1_memory_gb,
-      extra_disk_gb = step1_extra_disk_gb,
+      preemptible_attempts = preemptible_attempts,
+      max_retries = max_retries
+  }
+
+  scatter (model_batch in PrepareBatches.model_batches) {
+    call FitModel {
+      input:
+        pgen = step1_genotypes.pgen,
+        pvar = step1_genotypes.pvar,
+        psam = step1_genotypes.psam,
+        variant_ids = step1_variant_ids,
+        phenotypes = phenotypes,
+        phenotype_columns = model_batch.phenotype_columns,
+        trait_type = trait_type,
+        docker_image = docker_image,
+        covariates = covariates,
+        covariate_columns = covariate_columns,
+        categorical_covariates = categorical_covariates,
+        keep_samples = keep_samples,
+        remove_samples = remove_samples,
+        binary_encoding = binary_encoding,
+        inverse_normal_transform = inverse_normal_transform,
+        min_case_count = min_case_count,
+        cv_folds = cv_folds,
+        lowmem = lowmem,
+        block_size = step1_block_size,
+        cpu = step1_cpu,
+        memory_gb = step1_memory_gb,
+        extra_disk_gb = step1_extra_disk_gb,
+        preemptible_attempts = preemptible_attempts,
+        max_retries = max_retries
+    }
+  }
+
+  call CollectPredictions {
+    input:
+      prediction_lists = FitModel.prediction_list,
+      prediction_files = flatten(FitModel.prediction_files),
+      prediction_file_counts = FitModel.prediction_file_count,
+      phenotype_columns = PrepareBatches.selected_phenotypes,
+      batch_size = phenotype_batch_size,
+      docker_image = docker_image,
       preemptible_attempts = preemptible_attempts,
       max_retries = max_retries
   }
@@ -100,18 +146,28 @@ workflow Regenie {
 
   Array[ChromosomePgen] chromosome_genotypes = flatten(SplitGenotypes.chromosome_genotypes)
 
-  scatter (chromosome_set in chromosome_genotypes) {
+  Array[Pair[Int, Int]] job_indices = cross(range(length(chromosome_genotypes)), range(length(CollectPredictions.prediction_batches)))
+
+  scatter (job_index in job_indices) {
+    ChromosomePgen chromosome_set = chromosome_genotypes[job_index.left]
+    PredictionBatch phenotype_batch = CollectPredictions.prediction_batches[job_index.right]
+    AssociationJob association_job = object {
+      chromosome_set_index: job_index.left,
+      chromosome: chromosome_set.chromosome,
+      phenotype_batch_index: phenotype_batch.batch_index,
+      phenotype_columns: phenotype_batch.phenotype_columns
+    }
     call TestVariants {
       input:
         pgen = chromosome_set.pgen,
         pvar = chromosome_set.pvar,
         psam = chromosome_set.psam,
         phenotypes = phenotypes,
-        phenotype_columns = phenotype_columns,
+        phenotype_columns = phenotype_batch.phenotype_columns,
         trait_type = trait_type,
         docker_image = docker_image,
-        prediction_list = FitModel.prediction_list,
-        prediction_files = FitModel.prediction_files,
+        prediction_list = phenotype_batch.prediction_list,
+        prediction_files = phenotype_batch.prediction_files,
         covariates = covariates,
         covariate_columns = covariate_columns,
         categorical_covariates = categorical_covariates,
@@ -134,10 +190,21 @@ workflow Regenie {
   }
 
   output {
-    File prediction_list = FitModel.prediction_list
-    Array[File] prediction_files = FitModel.prediction_files
-    File step1_log = FitModel.regenie_log
-    File step1_task_log = FitModel.task_log
+    File prediction_list = CollectPredictions.prediction_list
+    Array[File] prediction_files = CollectPredictions.collected_prediction_files
+    File step1_log = FitModel.regenie_log[0]
+    File step1_task_log = FitModel.task_log[0]
+    Array[File] step1_logs = FitModel.regenie_log
+    Array[File] step1_task_logs = FitModel.task_log
+    Array[PhenotypeBatch] model_batches = PrepareBatches.model_batches
+    Array[PhenotypeBatch] phenotype_batches = PrepareBatches.phenotype_batches
+    File phenotype_batch_manifest = PrepareBatches.phenotype_batch_manifest
+    File model_batch_manifest = PrepareBatches.model_batch_manifest
+    File batch_preparation_log = PrepareBatches.task_log
+    Array[PredictionBatch] prediction_batches = CollectPredictions.prediction_batches
+    File prediction_batch_manifest = CollectPredictions.manifest
+    File prediction_collection_log = CollectPredictions.task_log
+    Array[AssociationJob] association_jobs = association_job
     Array[Array[File]] associations_by_shard = TestVariants.associations
     Array[File] associations = flatten(TestVariants.associations)
     Array[File] step2_logs = TestVariants.regenie_log
@@ -157,8 +224,10 @@ workflow Regenie {
     association_genotypes: "One or more PGEN file sets. Each set is split by chromosome before TestVariants. The same whole-genome files can be supplied for both steps."
     phenotypes: "Whitespace-delimited table with a header that starts with FID IID. Use NA for missing traits."
     phenotype_columns: "Optional comma-separated phenotype names. Omit or leave blank to use all columns after FID IID. All selected traits must use the same trait type."
+    phenotype_batch_size: "Traits per association job. Default 50. Set to 0 to use all selected traits in one batch."
+    batch_step1: "False: fit all selected traits together once. True: fit one model job per phenotype batch. Each job still uses whole-genome common SNPs."
     trait_type: "quantitative or binary."
-    docker_image: "Publicly readable container image. Use the digest from the GitHub Actions image build."
+    docker_image: "Container image string. Defaults to ghcr.io/aou-multiomics-analysis/regenie:latest. Supply a tag or digest to override it."
     covariates: "Optional table with a header that starts with FID IID."
     covariate_columns: "Optional comma-separated covariate names. If absent, use all covariate columns."
     categorical_covariates: "Optional comma-separated names of selected categorical covariates."
@@ -166,6 +235,93 @@ workflow Regenie {
     step1_extra_disk_gb: "Disk space in addition to localized input size. Include low-memory temporary files and predictions."
     step2_extra_disk_gb: "Disk space in addition to genotype and prediction input size. Include association outputs."
     split_extra_disk_gb: "Disk space in addition to twice the genotype input size. The split task retains localized inputs and chromosome outputs."
+  }
+}
+
+task PrepareBatches {
+  input {
+    File phenotypes
+    String? phenotype_columns
+    Int batch_size = 50
+    Boolean batch_step1 = false
+    String docker_image
+    Int preemptible_attempts = 0
+    Int max_retries = 1
+  }
+  Int disk_gb = ceil(size(phenotypes, "GB")) + 1
+  command <<<
+    set -euo pipefail
+    echo "[$(date -u +%FT%TZ)] Start phenotype batch task"
+    python3 /opt/regenie/scripts/prepare_batches.py \
+      --phenotypes '~{sub(phenotypes, "'", "'\"'\"'")}' \
+      ~{if defined(phenotype_columns) then "--phenotype-columns '" + sub(select_first([phenotype_columns]), "'", "'\"'\"'") + "'" else ""} \
+      --batch-size ~{batch_size} \
+      ~{if batch_step1 then "--batch-step1" else ""} \
+      2>&1 | tee task.log
+    echo "[$(date -u +%FT%TZ)] Phenotype batch task completed"
+  >>>
+  output {
+    String selected_phenotypes = read_string("selected_phenotypes.txt")
+    Array[PhenotypeBatch] phenotype_batches = read_json("phenotype_batches.json")
+    Array[PhenotypeBatch] model_batches = read_json("model_batches.json")
+    File phenotype_batch_manifest = "phenotype_batches.json"
+    File model_batch_manifest = "model_batches.json"
+    File task_log = "task.log"
+  }
+  runtime {
+    docker: docker_image
+    cpu: 1
+    memory: "1 GB"
+    disks: "local-disk ${disk_gb} SSD"
+    preemptible: preemptible_attempts
+    maxRetries: max_retries
+  }
+}
+
+task CollectPredictions {
+  input {
+    Array[File] prediction_lists
+    Array[File] prediction_files
+    Array[Int] prediction_file_counts
+    String phenotype_columns
+    Int batch_size = 50
+    String docker_image
+    Int preemptible_attempts = 0
+    Int max_retries = 1
+  }
+  Int disk_gb = ceil(2 * size(prediction_files, "GB") + size(prediction_lists, "GB")) + 5
+  command <<<
+    set -euo pipefail
+    echo "[$(date -u +%FT%TZ)] Start prediction collection task"
+    # Render localized File arrays at command time. Model outputs use fixed names.
+    cat > prediction_lists.txt <<'REGENIE_LISTS_4c76c013733743c0a53d71e241f942c4'
+    ~{sep="\n" prediction_lists}
+    REGENIE_LISTS_4c76c013733743c0a53d71e241f942c4
+    cat > prediction_files.txt <<'REGENIE_LOCO_a0e9c96ca4a44308ab087c14c09d9638'
+    ~{sep="\n" prediction_files}
+    REGENIE_LOCO_a0e9c96ca4a44308ab087c14c09d9638
+    python3 /opt/regenie/scripts/collect_predictions.py \
+      --prediction-lists prediction_lists.txt --prediction-files prediction_files.txt \
+      --prediction-file-counts '~{sep="," prediction_file_counts}' \
+      --phenotype-columns '~{sub(phenotype_columns, "'", "'\"'\"'")}' \
+      --batch-size ~{batch_size} \
+      2>&1 | tee task.log
+    echo "[$(date -u +%FT%TZ)] Prediction collection task completed"
+  >>>
+  output {
+    File prediction_list = "results/all_pred.list"
+    Array[File] collected_prediction_files = glob("results/predictions/*.loco")
+    Array[PredictionBatch] prediction_batches = read_json("results/prediction_batches.json")
+    File manifest = "results/prediction_batches.json"
+    File task_log = "task.log"
+  }
+  runtime {
+    docker: docker_image
+    cpu: 1
+    memory: "2 GB"
+    disks: "local-disk ${disk_gb} SSD"
+    preemptible: preemptible_attempts
+    maxRetries: max_retries
   }
 }
 
@@ -273,6 +429,7 @@ task FitModel {
   output {
     File prediction_list = "results/fit_pred.list"
     Array[File] prediction_files = glob("results/fit_*.loco")
+    Int prediction_file_count = length(glob("results/fit_*.loco"))
     File regenie_log = "results/fit.log"
     File task_log = "task.log"
   }
