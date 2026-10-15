@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,35 @@ class TerraCheckTests(unittest.TestCase):
 
     def test_comments_and_string_literals_are_not_false_positives(self):
         self.assertEqual(self.check('workflow w { String note = "write_lines(x)" # write_json(x)\n }'), [])
+
+    def output_check(self, source):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.wdl"
+            path.write_text("version 1.0\n" + source)
+            return self.checker.manifest_output_errors(WDL.load(str(path)))
+
+    def test_file_arrays_and_nested_file_structs_cannot_come_from_manifests(self):
+        for output in ('Array[File] files = read_lines("paths.txt")',
+                       'Array[Group] files = read_json("paths.json")',
+                       'Map[String, Array[Group]] metadata = read_json("paths.json")\n Array[Group] files = metadata["groups"]'):
+            with self.subTest(output=output):
+                errors = self.output_check('''struct Group { Array[File] files }
+                    task t { command { echo test } output { ''' + output + ''' } }
+                    workflow w { call t }''')
+                self.assertTrue(errors)
+                self.assertIn("File outputs", errors[-1])
+
+    def test_manifest_metadata_and_explicit_file_outputs_are_allowed(self):
+        self.assertEqual(self.output_check('''struct Batch { Int index String names }
+            task t { command { echo test } output {
+                Array[Batch] batches = read_json("batches.json")
+                Array[File] files = glob("results/*.loco")
+                File manifest = "batches.json"
+            } }
+            workflow w { call t }'''), [])
+
+    def test_production_task_outputs_do_not_depend_on_paths_inside_manifests(self):
+        self.assertEqual(self.checker.manifest_output_errors(WDL.load(str(ROOT / "workflows/regenie.wdl"))), [])
 
 
 if __name__ == "__main__":

@@ -49,8 +49,16 @@ def collect_predictions(prediction_lists, prediction_files, counts, selection, b
         listing = directory / f"batch_{batch['batch_index']}_pred.list"
         listing.write_text("".join(f"{trait} {destinations[trait]}\n" for trait in traits))
         result.append({**batch, "prediction_list": str(listing), "prediction_files": [destinations[trait] for trait in traits]})
-    # This output manifest contains typed File outputs for the next scatter.
+    # Manifests describe outputs. WDL must collect the files with explicit glob
+    # outputs and use those File values to construct the next scatter's inputs.
     (directory / "prediction_batches.json").write_text(json.dumps(result, indent=2) + "\n")
+    list_order = {name: index for index, name in enumerate(sorted(row["prediction_list"] for row in result))}
+    file_order = {name: index for index, name in enumerate(sorted(destinations.values()))}
+    indices = [{"batch_index": row["batch_index"], "phenotype_columns": row["phenotype_columns"],
+                "prediction_list_index": list_order[row["prediction_list"]],
+                "prediction_file_indices": [file_order[name] for name in row["prediction_files"]]}
+               for row in result]
+    (directory / "prediction_batch_indices.json").write_text(json.dumps(indices, indent=2) + "\n")
     return result
 
 
