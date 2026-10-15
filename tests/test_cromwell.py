@@ -14,14 +14,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.environ.get("CROMWELL_JAR"), "Set CROMWELL_JAR to run the engine localization test")
 class CromwellLocalizationTests(unittest.TestCase):
-    def test_production_workflow_localizes_every_file_before_command_quoting(self):
+    def test_shared_model_and_two_phenotype_batches(self):
+        self.check_workflow(batch_step1=False)
+
+    def test_separate_models_and_two_phenotype_batches(self):
+        self.check_workflow(batch_step1=True)
+
+    def check_workflow(self, batch_step1):
         with tempfile.TemporaryDirectory(prefix="regenie-cromwell-") as directory:
             work = Path(directory)
             data = work / "source"
             data.mkdir()
             for name, text in {
                 "data.pgen": "synthetic", "data.pvar": "#CHROM POS ID REF ALT\n1 1 v1 A G\n2 2 v2 T C\n",
-                "data.psam": "#IID\ns1\n", "phenotypes.txt": "FID IID bmi\n0 s1 2\n",
+                "data.psam": "#IID\ns1\n", "phenotypes.txt": "FID IID bmi height waist\n0 s1 2 3 4\n",
                 "covariates.txt": "FID IID age\n0 s1 40\n", "keep.txt": "0 s1\n",
                 "remove.txt": "0 s2\n", "variants.txt": "v1\nv2\n",
             }.items():
@@ -32,6 +38,7 @@ class CromwellLocalizationTests(unittest.TestCase):
             probe.write_text('''import json, sys
 from pathlib import Path
 args = sys.argv[1:]
+traits = args[args.index("--phenotype-columns") + 1].split(",")
 for flag in ("--pgen", "--pvar", "--psam", "--phenotypes", "--covariates", "--keep", "--remove", "--extract", "--prediction-list"):
     if flag in args:
         value = args[args.index(flag) + 1]
@@ -44,11 +51,22 @@ result = Path("results")
 result.mkdir()
 if args[0] == "step1":
     (result / "fit.log").write_text("GENOTYPE_LOCALIZATION_OK\\n")
-    (result / "fit_1.loco").write_text("synthetic predictions\\n")
-    (result / "fit_pred.list").write_text("bmi results/fit_1.loco\\n")
+    rows = []
+    for index, trait in enumerate(traits, 1):
+        path = result / ("fit_" + str(index) + ".loco")
+        path.write_text(trait + " prediction\\n")
+        rows.append(trait + " " + str(path) + "\\n")
+    (result / "fit_pred.list").write_text("".join(rows))
 else:
+    assert len(paths) == len(traits), "Association job localized predictions from other batches"
+    by_name = {Path(value).name: Path(value) for value in paths}
+    rows = [line.split(maxsplit=1) for line in Path(args[args.index("--prediction-list") + 1]).read_text().splitlines()]
+    assert [row[0] for row in rows] == traits
+    for trait, old in rows:
+        assert by_name[Path(old).name].read_text() == trait + " prediction\\n"
     (result / "assoc.log").write_text("GENOTYPE_LOCALIZATION_OK\\n")
-    (result / "assoc_bmi.regenie.gz").write_bytes(b"synthetic association output")
+    for trait in traits:
+        (result / ("assoc_" + trait + ".regenie.gz")).write_text(trait + " association\\n")
 print("COMMAND_FILE_LOCALIZATION_OK", args[0])
 ''')
             source = (ROOT / "workflows/regenie.wdl").read_text()
@@ -60,6 +78,8 @@ print("COMMAND_FILE_LOCALIZATION_OK", args[0])
             # only PLINK computation, so Cromwell must collect the new File
             # outputs and localize them for the second scatter.
             source = source.replace("/opt/regenie/scripts/split_genotypes.py", shlex.quote(str(ROOT / "scripts/split_genotypes.py")))
+            for script in ("prepare_batches.py", "collect_predictions.py"):
+                source = source.replace("/opt/regenie/scripts/" + script, shlex.quote(str(ROOT / "scripts" / script)))
             bin_dir = work / "bin"
             bin_dir.mkdir()
             plink = bin_dir / "plink2"
@@ -78,7 +98,8 @@ print("COMMAND_FILE_LOCALIZATION_OK", args[0])
                 "Regenie.covariates": str(data / "covariates.txt"),
                 "Regenie.keep_samples": str(data / "keep.txt"),
                 "Regenie.remove_samples": str(data / "remove.txt"),
-                "Regenie.docker_image": "unused-local-test",
+                "Regenie.phenotype_batch_size": 2,
+                "Regenie.batch_step1": batch_step1,
                 "Regenie.step1_cpu": 1, "Regenie.step2_cpu": 1,
                 "Regenie.step1_memory_gb": 1, "Regenie.step2_memory_gb": 1,
                 "Regenie.split_cpu": 1, "Regenie.split_memory_gb": 1,
@@ -98,7 +119,16 @@ print("COMMAND_FILE_LOCALIZATION_OK", args[0])
             observed = json.loads(metadata.read_text())
             self.assertEqual(observed["status"], "Succeeded")
             outputs = observed["outputs"]
-            self.assertEqual(len(outputs["Regenie.associations_by_shard"]), 2)
+            self.assertEqual([len(shard) for shard in outputs["Regenie.associations_by_shard"]], [2, 1, 2, 1])
+            self.assertEqual(len(outputs["Regenie.associations"]), 6)
+            self.assertEqual(len(outputs["Regenie.step1_logs"]), 2 if batch_step1 else 1)
+            self.assertEqual(len(outputs["Regenie.prediction_files"]), 3)
+            self.assertEqual([row["phenotype_columns"] for row in outputs["Regenie.phenotype_batches"]], ["bmi,height", "waist"])
+            self.assertEqual([(job["chromosome"], job["phenotype_batch_index"]) for job in outputs["Regenie.association_jobs"]],
+                             [("1", 0), ("1", 1), ("2", 0), ("2", 1)])
+            for index, trait in enumerate(("bmi", "height", "waist"), 1):
+                copied = next(path for path in outputs["Regenie.prediction_files"] if Path(path).name == f"trait_{index}.loco")
+                self.assertEqual(Path(copied).read_text(), trait + " prediction\n")
             chromosomes = outputs["Regenie.association_chromosomes"]
             self.assertEqual([entry["chromosome"] for entry in chromosomes], ["1", "2"])
             self.assertEqual(len(outputs["Regenie.split_manifests"]), 1)
@@ -106,7 +136,7 @@ print("COMMAND_FILE_LOCALIZATION_OK", args[0])
                 for suffix in ("pgen", "pvar", "psam"):
                     self.assertTrue(Path(entry[suffix]).is_file())
                 self.assertIn(entry["chromosome"] + " ", Path(entry["pvar"]).read_text())
-            for log in [outputs["Regenie.step1_log"], *outputs["Regenie.step2_logs"]]:
+            for log in [*outputs["Regenie.step1_logs"], *outputs["Regenie.step2_logs"]]:
                 self.assertEqual(Path(log).read_text(), "GENOTYPE_LOCALIZATION_OK\n")
 
 
