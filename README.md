@@ -151,6 +151,8 @@ The default settings use no preemptible attempts and allow one task retry.
 | `split_plink_logs`, `split_task_logs` | PLINK logs grouped by source set, and split task logs |
 | `prediction_list`, `prediction_files` | Combined trait-to-prediction list and LOCO files with unique basenames |
 | `step1_logs`, `step1_task_logs` | Logs for every model job, aligned with `model_batches` |
+| `step1_log`, `step1_task_log` | First model job's logs, retained for compatibility |
+| `step2_logs`, `step2_task_logs` | Association logs aligned with `association_jobs` |
 
 The split genotype files, LOCO files, and batch prediction lists are explicit
 WDL `File` outputs collected with `glob()`. The workflow builds the chromosome
@@ -158,8 +160,6 @@ and prediction structs from these collected files. JSON manifests describe
 the outputs; their embedded paths are metadata and must not be used as cloud
 input files. This prevents a downstream `size()` call from using a cloud path
 for a file that was never uploaded.
-| `step1_log`, `step1_task_log` | First model job's logs, retained for compatibility |
-| `step2_logs`, `step2_task_logs` | Association logs aligned with `association_jobs` |
 
 Results remain separate by chromosome and phenotype. `association_jobs`, `associations_by_shard`, and Step 2 logs use the same order: source input order, chromosome order (1–22, X, Y, XY, MT), then phenotype-batch order.
 Each job's `chromosome_set_index` identifies its entry in `association_chromosomes`.
