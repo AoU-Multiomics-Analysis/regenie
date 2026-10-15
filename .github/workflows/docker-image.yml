@@ -62,6 +62,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
           IMAGE_NAME: ${{ steps.image.outputs.name }}
+          AUTO_PUBLISH_LATEST: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           PUBLISH_LATEST: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_latest }}
         run: |
           docker tag regenie-smoke "$IMAGE_TAG"
@@ -72,7 +73,7 @@ jobs:
             docker tag regenie-smoke "$IMAGE_NAME:main"
             docker push "$IMAGE_NAME:main"
           fi
-          if [ "$GITHUB_REF" = 'refs/heads/main' ] || [ "$PUBLISH_LATEST" = 'true' ]; then
+          if [ "$AUTO_PUBLISH_LATEST" = 'true' ] || [ "$PUBLISH_LATEST" = 'true' ]; then
             docker tag regenie-smoke "$IMAGE_NAME:latest"
             docker push "$IMAGE_NAME:latest"
           fi

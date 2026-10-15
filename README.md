@@ -185,7 +185,7 @@ The split test compares all synthetic genotype values, samples, variant IDs, and
 It checks optional variant selection, including a selection that retains only one chromosome.
 It also compares joint and batched association results for complete quantitative and binary phenotypes, using both shared and separate Step 1 fits. The comparison checks variant identity, alleles, sample counts, effect estimates, standard errors, and test statistics.
 PR builds test the image without publishing it. Push and manual builds publish a `sha-<commit>` tag after the tests pass.
-Successful main-branch builds also update `main` and `latest`. For a manual release, select **Promote the tested image to latest** when dispatching the image workflow. Feature-branch pushes alone do not change `latest`.
+Successful main-branch pushes also update `main` and `latest`. For a manual release, select **Promote the tested image to latest** when dispatching the image workflow. Feature-branch pushes and manual runs with promotion disabled do not change `latest`.
 
 Automatic image builds run only when `scripts/*.py` changes. These scripts are copied into the image.
 Use **Run workflow** after a Dockerfile or dependency-only change.
