@@ -25,6 +25,13 @@ struct PredictionBatch {
   Array[File] prediction_files
 }
 
+struct PredictionBatchIndices {
+  Int batch_index
+  String phenotype_columns
+  Int prediction_list_index
+  Array[Int] prediction_file_indices
+}
+
 struct AssociationJob {
   Int chromosome_set_index
   String chromosome
@@ -128,6 +135,19 @@ workflow Regenie {
       max_retries = max_retries
   }
 
+  scatter (batch_indices in CollectPredictions.batch_indices) {
+    scatter (prediction_index in batch_indices.prediction_file_indices) {
+      File batch_prediction_file = CollectPredictions.collected_prediction_files[prediction_index]
+    }
+    PredictionBatch prediction_batch = object {
+      batch_index: batch_indices.batch_index,
+      phenotype_columns: batch_indices.phenotype_columns,
+      prediction_list: CollectPredictions.batch_prediction_lists[batch_indices.prediction_list_index],
+      prediction_files: batch_prediction_file
+    }
+  }
+  Array[PredictionBatch] collected_prediction_batches = prediction_batch
+
   scatter (genotype_set in association_genotypes) {
     call SplitGenotypes {
       input:
@@ -144,13 +164,24 @@ workflow Regenie {
     }
   }
 
-  Array[ChromosomePgen] chromosome_genotypes = flatten(SplitGenotypes.chromosome_genotypes)
+  Array[File] chromosome_pgen_files = flatten(SplitGenotypes.pgen_files)
+  Array[File] chromosome_pvar_files = flatten(SplitGenotypes.pvar_files)
+  Array[File] chromosome_psam_files = flatten(SplitGenotypes.psam_files)
+  scatter (chromosome_index in range(length(chromosome_pgen_files))) {
+    ChromosomePgen chromosome_file_set = object {
+      chromosome: sub(basename(chromosome_pgen_files[chromosome_index], ".pgen"), "^chr", ""),
+      pgen: chromosome_pgen_files[chromosome_index],
+      pvar: chromosome_pvar_files[chromosome_index],
+      psam: chromosome_psam_files[chromosome_index]
+    }
+  }
+  Array[ChromosomePgen] chromosome_genotypes = chromosome_file_set
 
-  Array[Pair[Int, Int]] job_indices = cross(range(length(chromosome_genotypes)), range(length(CollectPredictions.prediction_batches)))
+  Array[Pair[Int, Int]] job_indices = cross(range(length(chromosome_genotypes)), range(length(collected_prediction_batches)))
 
   scatter (job_index in job_indices) {
     ChromosomePgen chromosome_set = chromosome_genotypes[job_index.left]
-    PredictionBatch phenotype_batch = CollectPredictions.prediction_batches[job_index.right]
+    PredictionBatch phenotype_batch = collected_prediction_batches[job_index.right]
     AssociationJob association_job = object {
       chromosome_set_index: job_index.left,
       chromosome: chromosome_set.chromosome,
@@ -201,7 +232,7 @@ workflow Regenie {
     File phenotype_batch_manifest = PrepareBatches.phenotype_batch_manifest
     File model_batch_manifest = PrepareBatches.model_batch_manifest
     File batch_preparation_log = PrepareBatches.task_log
-    Array[PredictionBatch] prediction_batches = CollectPredictions.prediction_batches
+    Array[PredictionBatch] prediction_batches = prediction_batch
     File prediction_batch_manifest = CollectPredictions.manifest
     File prediction_collection_log = CollectPredictions.task_log
     Array[AssociationJob] association_jobs = association_job
@@ -311,7 +342,8 @@ task CollectPredictions {
   output {
     File prediction_list = "results/all_pred.list"
     Array[File] collected_prediction_files = glob("results/predictions/*.loco")
-    Array[PredictionBatch] prediction_batches = read_json("results/prediction_batches.json")
+    Array[File] batch_prediction_lists = glob("results/batch_*_pred.list")
+    Array[PredictionBatchIndices] batch_indices = read_json("results/prediction_batch_indices.json")
     File manifest = "results/prediction_batches.json"
     File task_log = "task.log"
   }
@@ -356,7 +388,23 @@ task SplitGenotypes {
   >>>
 
   output {
-    Array[ChromosomePgen] chromosome_genotypes = read_json("chromosome_genotypes.json")
+    # Explicit glob outputs let the Google backend plan file uploads before
+    # the task runs. Groups preserve numeric chromosome order, then X/Y/XY/MT.
+    Array[File] pgen_files = flatten([
+      glob("chromosomes/chr[1-9].pgen"), glob("chromosomes/chr[12][0-9].pgen"),
+      glob("chromosomes/chrX.pgen"), glob("chromosomes/chrY.pgen"),
+      glob("chromosomes/chrXY.pgen"), glob("chromosomes/chrMT.pgen")
+    ])
+    Array[File] pvar_files = flatten([
+      glob("chromosomes/chr[1-9].pvar"), glob("chromosomes/chr[12][0-9].pvar"),
+      glob("chromosomes/chrX.pvar"), glob("chromosomes/chrY.pvar"),
+      glob("chromosomes/chrXY.pvar"), glob("chromosomes/chrMT.pvar")
+    ])
+    Array[File] psam_files = flatten([
+      glob("chromosomes/chr[1-9].psam"), glob("chromosomes/chr[12][0-9].psam"),
+      glob("chromosomes/chrX.psam"), glob("chromosomes/chrY.psam"),
+      glob("chromosomes/chrXY.psam"), glob("chromosomes/chrMT.psam")
+    ])
     File manifest = "chromosome_genotypes.json"
     Array[File] plink_logs = glob("chromosomes/*.log")
     File task_log = "task.log"

@@ -102,7 +102,7 @@ def main() -> None:
             if chromosome_counts(Path(files["pvar"])) != [(chromosome, count)]:
                 raise ValueError(f"Split output for chromosome {chromosome} has unexpected variants")
             outputs.append({"chromosome": chromosome, **files})
-        # This is an output manifest. WDL reads its entries as typed File outputs.
+        # This is metadata. WDL collects genotype files through explicit glob outputs.
         Path("chromosome_genotypes.json").write_text(json.dumps(outputs, indent=2) + "\n")
         LOG.info("Chromosome split completed: %d file sets", len(outputs))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

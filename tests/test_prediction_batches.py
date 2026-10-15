@@ -64,6 +64,17 @@ class PredictionBatchTests(unittest.TestCase):
             with self.subTest(counts=counts, selected=selected), self.assertRaises(ValueError):
                 self.collector.collect_predictions([listing], files, counts, selected, 1, self.work / "results")
 
+    def test_batch_indices_match_glob_order_for_more_than_ten_traits_and_batches(self):
+        traits = [f"p{i}" for i in range(1, 13)]
+        listing, files = self.model(0, traits)
+        directory = self.work / "results"
+        self.collector.collect_predictions([listing], files, [12], ",".join(traits), 1, directory)
+        rows = json.loads((directory / "prediction_batch_indices.json").read_text())
+        self.assertEqual([row["prediction_list_index"] for row in rows], [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2])
+        self.assertEqual([row["prediction_file_indices"] for row in rows],
+                         [[0], [4], [5], [6], [7], [8], [9], [10], [11], [1], [2], [3]])
+        self.assertEqual([row["phenotype_columns"] for row in rows], traits)
+
     def test_duplicate_traits_across_models_fail(self):
         first, first_files = self.model(0, ["a"])
         second, second_files = self.model(1, ["a"])

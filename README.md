@@ -154,6 +154,13 @@ The default settings use no preemptible attempts and allow one task retry.
 | `step1_log`, `step1_task_log` | First model job's logs, retained for compatibility |
 | `step2_logs`, `step2_task_logs` | Association logs aligned with `association_jobs` |
 
+The split genotype files, LOCO files, and batch prediction lists are explicit
+WDL `File` outputs collected with `glob()`. The workflow builds the chromosome
+and prediction structs from these collected files. JSON manifests describe
+the outputs; their embedded paths are metadata and must not be used as cloud
+input files. This prevents a downstream `size()` call from using a cloud path
+for a file that was never uploaded.
+
 Results remain separate by chromosome and phenotype. `association_jobs`, `associations_by_shard`, and Step 2 logs use the same order: source input order, chromosome order (1–22, X, Y, XY, MT), then phenotype-batch order.
 Each job's `chromosome_set_index` identifies its entry in `association_chromosomes`.
 An input that already contains one chromosome produces one chromosome set. Separate inputs are not merged or deduplicated.
@@ -201,15 +208,16 @@ python tools/check_terra_wdl.py workflows/regenie.wdl
 python -m unittest discover -s tests -v
 ```
 
-The scope checker rejects workflow-scope file-writing functions, including functions in calls, scatters, conditionals, and outputs.
+The Terra checker rejects workflow-scope file-writing functions, including functions in calls, scatters, conditionals, and outputs. It also rejects task File outputs read from manifest contents, including nested File fields in structs.
 Command tests simulate cloud-to-local File mapping in all five tasks. They test safe quoting with special characters in localized paths.
+Output-collection tests copy only declared File and glob outputs into separate storage, remove the producer directory, and check that the returned files remain readable. They cover genotype triplets and batch prediction lists, numeric chromosome order, and file matching with more than ten traits and batches. These tests model the cloud collection boundary; they do not run Google Batch.
 GitHub Actions also runs the production workflow graph and command expressions with Cromwell 87 on the local backend.
-This test checks that genotype files, optional files, and prediction files reach commands through localized task paths. It also checks that the split JSON output becomes typed chromosome File outputs and reaches the second scatter.
+This test checks that genotype files, optional files, and prediction files reach commands through localized task paths. It also checks that structs built from explicit glob outputs reach the association scatter.
 It runs both shared and separate model fits with two phenotype batches and two chromosomes. It checks that each association task receives only its batch's predictions and that identical model-output basenames do not mix traits.
 It uses computation probes in place of PLINK and REGENIE and removes the Docker runtime for that test only.
 The image smoke test runs real PLINK and REGENIE. It uses different task directories and cloud metadata in the prediction list.
 
-**Terra validation status:** The complete workflow has not been run on Terra. Syntax checks and synthetic tests do not prove Terra execution.
+**Terra validation status:** This output-file fix has not been run on Terra. Syntax checks and synthetic tests do not prove Terra execution.
 No Terra job has been submitted as part of this implementation.
 
 ## References
