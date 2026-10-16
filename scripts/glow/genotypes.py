@@ -26,9 +26,18 @@ def impute_values(values):
     mean=sum(called)/len(called)
     return [mean if v is None else v for v in values]
 
+def read_bgen(spark,bgen_uri,sample_uri):
+    # Cromwell and immutable staging can change basenames. This input is
+    # explicitly typed as BGEN, and its sample sidecar is supplied separately.
+    # Glow's sampleFilePath parses URI syntax; load() parses Hadoop Path syntax.
+    return (spark.read.format("bgen").option("emitHardCalls","false")
+            .option("useBgenIndex","false").option("ignoreExtension","true")
+            .option("sampleFilePath",sample_uri).option("sampleIdColumn","ID_2")
+            .load(spark_path(bgen_uri)))
+
 def read_dosages(spark,bgen_uri,sample_uri,variants_uri,expected_sample_ids,source_index):
     from pyspark.sql import functions as F
-    source=spark.read.format("bgen").option("emitHardCalls","false").option("useBgenIndex","false").load(spark_path(bgen_uri))
+    source=read_bgen(spark,bgen_uri,sample_uri)
     if not expected_sample_ids or len(set(expected_sample_ids))!=len(expected_sample_ids):
         raise ValueError("Invalid expected sample IDs")
     first=source.select(F.transform("genotypes",lambda g:g["sampleId"]).alias("ids")).first()

@@ -113,23 +113,6 @@ def main(argv=None):
         "--bgen",association.bgen,"--sample",association.sample,"--variants",association.variants,
         "--sample-map",prepared["quantitative"].sample_map,"--expected",data/"expected.npz","--out-dir",reference],root/"reference.log")
     results={}
-    for name,options in profiles:
-        masters=[args.spark_master] if args.spark_master else (["local-cluster[1,1,1536]"] if name=="binary12" else ["local-cluster[1,1,1536]","local-cluster[2,1,1536]"])
-        for master in masters:
-            workers=master.split("[",1)[1].split(",",1)[0] if master.startswith("local-cluster") else "local"
-            output=root/(name+"_workers"+workers)
-            cohort=prepared[name]
-            command=spark_command(master)+["/opt/regenie-spark/scripts/glow/spark_main.py",
-                "--model-bgen",model.bgen.as_uri(),"--model-sample",model.sample.as_uri(),"--model-variants",model.variants.as_uri(),
-                "--association-bgen",association.bgen.as_uri(),"--association-sample",association.sample.as_uri(),"--association-variants",association.variants.as_uri(),
-                "--sample-map",cohort.sample_map.as_uri(),"--phenotypes",cohort.phenotypes.as_uri(),"--covariates",cohort.covariates.as_uri(),
-                "--phenotype-batches",cohort.batches.as_uri(),"--output-prefix",output.as_uri(),
-                "--identity-sha256",hashlib.sha256((name+master).encode()).hexdigest()]+scientific_arguments(options)
-            run(command,root/(name+"_workers"+workers+".log"))
-            result=read_associations(output)
-            if name in results:
-                pd.testing.assert_frame_equal(results[name],result,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
-            else: results[name]=result
     # Exercise the exact single-VM CLI used by the WDL, including file lists and collection.
     localized=root/"localized ' % [files]"; localized.mkdir()
     localized_model={}; localized_association={}
@@ -148,7 +131,24 @@ def main(argv=None):
             file_list=root/(name+"_"+kind+".txt"); file_list.write_text(str(localized_association[kind])+"\n")
             command += ["--association-"+kind+"-list",str(file_list)]
         run(command+scientific_arguments(options),root/(name+"_terra_local.log"))
-        pd.testing.assert_frame_equal(results[name],read_associations(output,collected=True),check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
+        results[name]=read_associations(output,collected=True)
+    for name,options in profiles:
+        masters=[args.spark_master] if args.spark_master else (["local-cluster[1,1,1536]"] if name=="binary12" else ["local-cluster[1,1,1536]","local-cluster[2,1,1536]"])
+        for master in masters:
+            workers=master.split("[",1)[1].split(",",1)[0] if master.startswith("local-cluster") else "local"
+            output=root/(name+"_workers"+workers)
+            cohort=prepared[name]
+            command=spark_command(master)+["/opt/regenie-spark/scripts/glow/spark_main.py",
+                "--model-bgen",model.bgen.as_uri(),"--model-sample",model.sample.as_uri(),"--model-variants",model.variants.as_uri(),
+                "--association-bgen",association.bgen.as_uri(),"--association-sample",association.sample.as_uri(),"--association-variants",association.variants.as_uri(),
+                "--sample-map",cohort.sample_map.as_uri(),"--phenotypes",cohort.phenotypes.as_uri(),"--covariates",cohort.covariates.as_uri(),
+                "--phenotype-batches",cohort.batches.as_uri(),"--output-prefix",output.as_uri(),
+                "--identity-sha256",hashlib.sha256((name+master).encode()).hexdigest()]+scientific_arguments(options)
+            run(command,root/(name+"_workers"+workers+".log"))
+            result=read_associations(output)
+            if name in results:
+                pd.testing.assert_frame_equal(results[name],result,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
+            else: results[name]=result
     first=results["binary01"].copy(); second=results["binary12"].copy()
     second["phenotype"]=second.phenotype.str.removesuffix("_12")
     pd.testing.assert_frame_equal(first,second,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
