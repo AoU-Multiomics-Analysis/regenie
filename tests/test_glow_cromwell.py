@@ -35,7 +35,7 @@ if mode=='prepare':
         (out/name).write_text(name)
 elif mode=='convert':
     index=value('--source-index'); role=value('--role')
-    for name in ('genotypes.bgen','genotypes.sample','variants.tsv','conversion.json'):
+    for name in ('genotypes.bgen','genotypes.sample','variants.tsv','conversion.json','conversion.log'):
         (out/name).write_text(role+index)
 else:
     for kind in ('bgen','sample','variants'):
@@ -74,4 +74,6 @@ print('COMMAND_FILE_LOCALIZATION_OK',mode)
             self.assertEqual(output["status"],"Succeeded")
             self.assertEqual(len(output["outputs"]["GlowRegenie.associations"]),2)
             self.assertEqual(len(output["outputs"]["GlowRegenie.association_sets"]),2)
+            logs=output["outputs"]["GlowRegenie.conversion_logs"]
+            self.assertEqual([Path(p).read_text() for p in logs],["model0","association0","association1"])
             self.assertTrue(all(Path(p).is_file() for p in output["outputs"]["GlowRegenie.associations"]))

@@ -79,14 +79,24 @@ def convert_pgen(pgen,pvar,psam,sample_map,variant_ids,source_index,role,out_dir
     order=inputs/"sample_order.txt"
     order.write_text("".join("0 "+token+"\n" for token in mapping.sample_id))
     export=out_dir/"genotypes"
-    command=["plink2","--pfile",str(prefix),"--keep",str(order),"--indiv-sort","file",str(order),
-             "--threads",str(threads),"--memory",str(memory_mb)]
-    if variant_ids is not None: command += ["--extract",str(Path(variant_ids).resolve())]
-    command += ["--export","bgen-1.2","bits=16","ref-first","id-paste=iid","--out",str(export)]
+    ordered=inputs/"ordered"
+    select_command=["plink2","--pfile",str(prefix),"--keep",str(order),"--indiv-sort","file",str(order),
+                    "--threads",str(threads),"--memory",str(memory_mb),"--make-pgen","--out",str(ordered)]
+    if variant_ids is not None: select_command += ["--extract",str(Path(variant_ids).resolve())]
+    export_command=["plink2","--pfile",str(ordered),"--threads",str(threads),"--memory",str(memory_mb),
+                    "--export","bgen-1.2","bits=16","ref-first","id-paste=iid","--out",str(export)]
     log=out_dir/"conversion.log"
     LOG.info("Export %s source %d: %d samples, %d variants",role,source_index,len(mapping),len(variants))
     with log.open("w") as stream:
-        subprocess.run(command,check=True,stdout=stream,stderr=subprocess.STDOUT)
+        try:
+            for phase,command in (("sample sorting",select_command),("BGEN export",export_command)):
+                LOG.info("Run PLINK %s",phase)
+                stream.write("Start PLINK "+phase+"\n"); stream.flush()
+                subprocess.run(command,check=True,stdout=stream,stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            stream.flush()
+            LOG.error("PLINK failed; diagnostic tail:\n%s",log.read_text()[-12000:])
+            raise
     sample=export.with_suffix(".sample")
     actual=pd.read_csv(require_local_file(sample),sep=r"\s+",skiprows=[1],dtype=str)
     if actual.ID_2.tolist()!=mapping.sample_id.tolist():

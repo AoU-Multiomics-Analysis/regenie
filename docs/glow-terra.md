@@ -24,7 +24,8 @@ The existing [native workflow](../workflows/regenie.wdl) remains available.
 See the [Glow method documentation](https://glow.readthedocs.io/en/stable/tertiary/whole-genome-regression.html)
 and [association tests](https://glow.readthedocs.io/en/stable/tertiary/regression-tests.html).
 
-PLINK exports BGEN 1.2 with 16-bit probabilities and REF first.
+PLINK first writes a filtered PGEN set in the prepared sample order.
+It then exports BGEN 1.2 with 16-bit probabilities and REF first.
 Spark calculates ALT dosage from genotype probabilities.
 It calculates observed MAC before it fills missing dosages with the variant mean.
 All-missing and constant variants are removed. The association MAC threshold is 5.
@@ -184,7 +185,8 @@ These are adjustable starting values. They have not been benchmarked on a study.
 | Conversion extra disk allowance | 100 GiB per source |
 | Controller extra disk allowance | 100 GiB |
 
-Increase conversion disk for BGEN export and temporary files.
+Increase conversion disk for the temporary sorted PGEN set, BGEN export,
+and other temporary files.
 Increase controller disk for downloaded results.
 Phenotype batches run in sequence. Spark distributes calculations within each batch.
 More phenotypes increase the number of model fits and output files.

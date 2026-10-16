@@ -168,7 +168,8 @@ workflow GlowRegenie {
     File model_bgen = ConvertGlowModelGenotypes.bgen
     File model_sample = ConvertGlowModelGenotypes.sample
     File model_variant_metadata = ConvertGlowModelGenotypes.variants
-    Array[File] conversion_logs = flatten([[ConvertGlowModelGenotypes.task_log], ConvertGlowAssociationGenotypes.task_log])
+    Array[File] conversion_logs = flatten([[ConvertGlowModelGenotypes.plink_log], ConvertGlowAssociationGenotypes.plink_log])
+    Array[File] conversion_task_logs = flatten([[ConvertGlowModelGenotypes.task_log], ConvertGlowAssociationGenotypes.task_log])
   }
 
   meta {
@@ -288,6 +289,7 @@ task ConvertGlowGenotypes {
     File sample = "converted/genotypes.sample"
     File variants = "converted/variants.tsv"
     File report = "converted/conversion.json"
+    File plink_log = "converted/conversion.log"
     File task_log = "task.log"
   }
   runtime {

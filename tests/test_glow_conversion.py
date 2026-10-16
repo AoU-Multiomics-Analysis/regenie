@@ -23,9 +23,16 @@ class ConversionTests(unittest.TestCase):
     def fake_export(self, args, **kwargs):
         prefix=Path(args[args.index("--out")+1])
         source=Path(args[args.index("--pfile")+1])
-        order=Path(args[args.index("--indiv-sort")+2]).read_text().splitlines()
-        prefix.with_suffix(".bgen").write_bytes(b"bgen")
-        prefix.with_suffix(".sample").write_text("ID_1 ID_2 missing\n0 0 0\n"+"".join("0 "+row.split()[1]+" 0\n" for row in order))
+        if "--make-pgen" in args:
+            import shutil
+            order=Path(args[args.index("--indiv-sort")+2]).read_text().splitlines()
+            prefix.with_suffix(".pgen").write_bytes(b"ordered")
+            shutil.copyfile(source.with_suffix(".pvar"),prefix.with_suffix(".pvar"))
+            prefix.with_suffix(".psam").write_text("#FID IID\n"+"\n".join(order)+"\n")
+        else:
+            order=source.with_suffix(".psam").read_text().splitlines()[1:]
+            prefix.with_suffix(".bgen").write_bytes(b"bgen")
+            prefix.with_suffix(".sample").write_text("ID_1 ID_2 missing\n0 0 0\n"+"".join("0 "+row.split()[1]+" 0\n" for row in order))
         self.args=args
 
     def test_export_uses_dosages_and_order_without_modifying_source(self):
@@ -69,3 +76,29 @@ class ConversionTests(unittest.TestCase):
         self.assertNotEqual(first.bgen, second.bgen)
         self.assertEqual(json.loads(first.report.read_text())["source_index"], 0)
         self.assertEqual(json.loads(second.report.read_text())["source_index"], 1)
+
+    def test_sort_happens_before_bgen_export(self):
+        calls = []
+        def record(args, **kwargs):
+            calls.append(args)
+            return self.fake_export(args, **kwargs)
+        with patch("scripts.glow.convert.subprocess.run", side_effect=record):
+            self.convert()
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--make-pgen", calls[0])
+        self.assertIn("--indiv-sort", calls[0])
+        self.assertNotIn("--indiv-sort", calls[1])
+        self.assertIn("--export", calls[1])
+        self.assertEqual(calls[0][calls[0].index("--out") + 1], calls[1][calls[1].index("--pfile") + 1])
+
+    def test_plink_failure_prints_its_diagnostic_log(self):
+        import subprocess
+        def fail(args, **kwargs):
+            kwargs["stdout"].write("PLINK_DIAGNOSTIC: unsupported export option\n")
+            kwargs["stdout"].flush()
+            raise subprocess.CalledProcessError(8, args)
+        with patch("scripts.glow.convert.subprocess.run", side_effect=fail):
+            with self.assertLogs(level="ERROR") as logs:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.convert()
+            self.assertIn("PLINK_DIAGNOSTIC", "\n".join(logs.output))
