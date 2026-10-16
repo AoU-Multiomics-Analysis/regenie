@@ -64,7 +64,7 @@ def generate_data(root):
 
 def spark_command(master):
     workers=1 if master=="local[2]" else int(master.split("[",1)[1].split(",",1)[0])
-    return ["spark-submit","--master",master,"--driver-memory","1g","--executor-memory","512m",
+    return ["spark-submit","--master",master,"--driver-memory","1g","--executor-memory","1g",
             "--conf","spark.dynamicAllocation.enabled=false","--conf",f"spark.cores.max={workers}",
             "--conf","spark.executor.cores=1","--conf","spark.executor.memoryOverhead=384m",
             "--conf","spark.rpc.netty.dispatcher.numThreads=2","--conf","spark.shuffle.io.serverThreads=2",
@@ -105,7 +105,7 @@ def main(argv=None):
         "--sample-map",prepared["quantitative"].sample_map,"--expected",data/"expected.npz","--out-dir",reference],root/"reference.log")
     results={}
     for name,options in profiles:
-        masters=[args.spark_master] if args.spark_master else (["local-cluster[1,1,1024]"] if name=="binary12" else ["local-cluster[1,1,1024]","local-cluster[2,1,1024]"])
+        masters=[args.spark_master] if args.spark_master else (["local-cluster[1,1,1536]"] if name=="binary12" else ["local-cluster[1,1,1536]","local-cluster[2,1,1536]"])
         for master in masters:
             workers=master.split("[",1)[1].split(",",1)[0] if master.startswith("local-cluster") else "local"
             output=root/(name+"_workers"+workers)

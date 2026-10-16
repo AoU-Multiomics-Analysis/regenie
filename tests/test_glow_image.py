@@ -26,3 +26,9 @@ class ImageTests(unittest.TestCase):
         test=next(i for i,s in enumerate(steps) if s.get("name")=="Run synthetic Spark tests")
         self.assertLess(test,publish)
         self.assertNotIn("always()",steps[publish].get("if",""))
+
+    def test_ci_executors_have_at_least_one_gibibyte_heap(self):
+        from scripts.glow.smoke_test import spark_command
+        for master in ("local-cluster[1,1,1536]", "local-cluster[2,1,1536]"):
+            command = spark_command(master)
+            self.assertEqual(command[command.index("--executor-memory") + 1], "1g")
