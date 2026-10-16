@@ -1,5 +1,14 @@
 # Glow Spark workflow for Terra
 
+> **October 16, 2026 update:** The user selected Spark on one Terra VM, like
+> MTtoVCF, as the default. `GlowRegenie` now uses `local[analysis_cpu]` and normal
+> Cromwell File localization. It has no Dataproc setup inputs. The original
+> Dataproc implementation described below remains a separate optional workflow,
+> `GlowRegenieDataproc`. The original implementation plan is complete; do not
+> restart it. See [the current Terra guide](../../glow-terra.md) and
+> [the Dataproc guide](../../glow-dataproc.md) for current use and validation status.
+
+
 ## Purpose and agreed scope
 
 Add a separate WDL 1.0 workflow for a standard Terra workspace on Google Cloud.

@@ -60,8 +60,9 @@ The workflow returns `sample_map.tsv` to map them back to the original strings.
 
 Use [quantitative](../examples/glow.quantitative.inputs.json) or
 [binary](../examples/glow.binary.inputs.json) as a template.
-Every example value is a placeholder. The repeated `a` image digest is invalid
-for use and must be replaced with the digest from a successful image build.
+Replace the example input paths and column names. The default image and example
+image references use a tested digest. Omit `docker_image` to use the WDL default,
+or supply another Terra local image digest as an override.
 
 | Input | Required contents |
 | --- | --- |
@@ -91,8 +92,8 @@ Do not replace the explicit genotype File fields with a list of cloud paths.
    Include its `glow_regenie_dataproc.wdl` import; the default workflow calls only
    the shared preparation and conversion tasks from that file.
 2. Load the quantitative or binary example. Replace the input paths and column names.
-3. Set `docker_image` to the **Terra local image** digest from a successful
-   [Glow Spark Image build](../.github/workflows/glow-image.yml).
+3. Use the default `docker_image`, or set another **Terra local image** digest
+   from a successful [Glow Spark Image build](../.github/workflows/glow-image.yml).
    Its tag starts with `local-sha-`. This image includes Spark and Java.
    The `sha-` image is for Dataproc, which supplies its own Spark runtime.
 4. Make the image readable by Terra. If GHCR access is restricted, copy the same
@@ -142,6 +143,12 @@ manifest paths are metadata. Temporary Spark and Parquet files stay on the task
 disk and are removed after output collection.
 
 ## Image and tests
+
+Tested default image:
+
+```text
+ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:c2d18e1db4049aa2c3fe9a9833037cfddad441d3c2074e04b9c9fb6fb00956b2
+```
 
 The image uses micromamba 2.3.3, pinned conda-forge and bioconda packages,
 Spark 3.5.1, Java 17.0.15, and Glow 2.0.3 built from source commit

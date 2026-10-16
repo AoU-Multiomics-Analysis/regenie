@@ -15,7 +15,7 @@ workflow GlowRegenie {
     File? keep_samples
     File? remove_samples
     File? association_variant_ids
-    String docker_image
+    String docker_image = "ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:c2d18e1db4049aa2c3fe9a9833037cfddad441d3c2074e04b9c9fb6fb00956b2"
     String trait_type
     String? phenotype_columns
     String? covariate_columns

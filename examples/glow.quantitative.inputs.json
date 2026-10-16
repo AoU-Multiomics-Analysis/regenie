@@ -19,7 +19,7 @@
   "GlowRegenie.covariate_columns": "age,sex,pc1,pc2",
   "GlowRegenie.categorical_covariates": "sex",
   "GlowRegenie.missing_data_policy": "error",
-  "GlowRegenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "GlowRegenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:c2d18e1db4049aa2c3fe9a9833037cfddad441d3c2074e04b9c9fb6fb00956b2",
   "GlowRegenie.batch_size": 50,
   "GlowRegenie.variants_per_block": 1000,
   "GlowRegenie.sample_block_count": 10,

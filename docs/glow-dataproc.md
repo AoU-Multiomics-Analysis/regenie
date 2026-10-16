@@ -58,8 +58,9 @@ The workflow returns `sample_map.tsv` to map them back to the original strings.
 
 Use [quantitative](../examples/glow.dataproc.quantitative.inputs.json) or
 [binary](../examples/glow.dataproc.binary.inputs.json) as a template.
-Every example value is a placeholder. The repeated `a` image digest is invalid
-for use and must be replaced with the digest from a successful image build.
+Replace the example paths, cloud resources, and column names. The examples pin
+a tested Dataproc image digest at a placeholder Google registry path. Copy the
+published image to your registry and use its digest reference.
 
 | Input | Required contents |
 | --- | --- |
@@ -156,7 +157,7 @@ After a successful build, copy the published production image to Google Artifact
 Registry. Use the digest from that build, rather than the example digest:
 
 ```bash
-source_image='ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:REPLACE_DIGEST'
+source_image='ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:639d9340dfcb9c20b515389b59c62d4301306cdc41d03b80858fff9014cb8462'
 target_image='us-central1-docker.pkg.dev/PROJECT/REPOSITORY/regenie-glow:RELEASE'
 crane copy "$source_image" "$target_image"
 crane digest "$source_image"

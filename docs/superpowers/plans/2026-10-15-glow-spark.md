@@ -1,5 +1,14 @@
 # Glow Spark Workflow Implementation Plan
 
+> **October 16, 2026 update:** The user selected Spark on one Terra VM, like
+> MTtoVCF, as the default. `GlowRegenie` now uses `local[analysis_cpu]` and normal
+> Cromwell File localization. It has no Dataproc setup inputs. The original
+> Dataproc implementation described below remains a separate optional workflow,
+> `GlowRegenieDataproc`. The original implementation plan is complete; do not
+> restart it. See [the current Terra guide](../../glow-terra.md) and
+> [the Dataproc guide](../../glow-dataproc.md) for current use and validation status.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a separate Terra WDL that runs Glow model fitting and association tests on Dataproc Serverless.
