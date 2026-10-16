@@ -7,9 +7,13 @@ on:
     paths:
       - 'workflows/**/*.wdl'
       - 'scripts/*.py'
+      - 'scripts/glow/**/*.py'
       - 'tools/check_terra_wdl.py'
       - 'tests/**'
       - 'requirements-dev.txt'
+      - 'requirements-glow-test.txt'
+      - 'envs/glow/**'
+      - '.github/workflows/glow-image.yml'
       - 'examples/**'
       - '.dockstore.yml'
       - '.github/workflows/wdl-validation.yml'
@@ -18,9 +22,13 @@ on:
     paths:
       - 'workflows/**/*.wdl'
       - 'scripts/*.py'
+      - 'scripts/glow/**/*.py'
       - 'tools/check_terra_wdl.py'
       - 'tests/**'
       - 'requirements-dev.txt'
+      - 'requirements-glow-test.txt'
+      - 'envs/glow/**'
+      - '.github/workflows/glow-image.yml'
       - 'examples/**'
       - '.dockstore.yml'
       - '.github/workflows/wdl-validation.yml'
@@ -37,11 +45,11 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install validation tools
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt -r requirements-glow-test.txt
       - name: Check WDL 1.0
-        run: miniwdl check --strict workflows/regenie.wdl
+        run: miniwdl check --strict workflows/regenie.wdl workflows/glow_regenie.wdl
       - name: Check Terra workflow expressions
-        run: python tools/check_terra_wdl.py workflows/regenie.wdl
+        run: python tools/check_terra_wdl.py workflows/regenie.wdl workflows/glow_regenie.wdl
       - name: Test CLI and command-time file localization
         run: python -m unittest discover -s tests -v
       - uses: actions/setup-java@v4
@@ -53,4 +61,6 @@ jobs:
       - name: Test production commands with Cromwell File localization
         env:
           CROMWELL_JAR: ${{ runner.temp }}/cromwell-87.jar
-        run: python -m unittest discover -s tests -p test_cromwell.py -v
+        run: |
+          python -m unittest discover -s tests -p test_cromwell.py -v
+          python -m unittest discover -s tests -p test_glow_cromwell.py -v

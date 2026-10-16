@@ -10,8 +10,8 @@ import tempfile
 from dataclasses import asdict
 from pathlib import Path
 import pandas as pd
-from .contracts import GLOW_COMMIT, LOG, OutputArtifact, add_scientific_arguments, options_from_args, setup_logging
-from .storage import checksum, collect_outputs, list_uris, local_uri, object_hash, object_size, publish_outputs, remote_blob, upload_file
+from scripts.glow.contracts import GLOW_COMMIT, LOG, OutputArtifact, add_scientific_arguments, options_from_args, setup_logging
+from scripts.glow.storage import checksum, collect_outputs, list_uris, local_uri, object_hash, object_size, publish_outputs, remote_blob, upload_file
 
 def local_copy(client,uri,path):
     if uri.startswith("file:"): shutil.copyfile(local_uri(uri),path)
@@ -37,8 +37,8 @@ def main(argv=None):
     import glow
     from pyspark.sql import SparkSession, functions as F
     from google.cloud import storage
-    from .analysis import fit_batch,predict_chromosome,test_chromosome,release_fit
-    from .genotypes import read_dosages,retain_usable_variants
+    from scripts.glow.analysis import fit_batch,predict_chromosome,test_chromosome,release_fit
+    from scripts.glow.genotypes import read_dosages,retain_usable_variants
     client=storage.Client() if args.output_prefix.startswith("gs:") else None
     if client is None and not args.output_prefix.startswith("file:"):
         raise ValueError("Unsupported output prefix")
@@ -80,7 +80,7 @@ def main(argv=None):
             model_chromosomes={row.contigName for row in model.select("contigName").distinct().collect()}
             if not set(chromosomes)<=model_chromosomes: raise ValueError("Association chromosome is absent from model panel")
             def upload_local(kind,path,basename):
-                from .storage import DIRECTORIES
+                from scripts.glow.storage import DIRECTORIES
                 uri=run_uri+"/results/"+DIRECTORIES[kind]+"/"+basename
                 upload_file(client,uri,path)
                 outputs.append(OutputArtifact(kind,uri,DIRECTORIES[kind]+"/"+basename,checksum(path),path.stat().st_size))

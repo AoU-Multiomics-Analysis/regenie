@@ -1,0 +1,59 @@
+name: Glow Spark Image
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['scripts/glow/**/*.py']
+  pull_request:
+    branches: [main]
+    paths: ['scripts/glow/**/*.py']
+permissions:
+  contents: read
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set image reference
+        id: image
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-glow"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$image:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build production and CI images on GitHub
+        run: |
+          docker build --platform linux/amd64 --target production --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-production .
+          docker build --platform linux/amd64 --target ci-test --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-ci .
+      - name: Run synthetic Spark tests
+        run: |
+          mkdir -p test-output
+          chmod 777 test-output
+          docker run --rm -v "$PWD/test-output:/work" glow-ci python -m scripts.glow.smoke_test --work-dir /work/smoke
+      - name: Upload Spark test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: glow-synthetic-smoke
+          path: test-output/
+          retention-days: 7
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested production image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          docker tag glow-production "$IMAGE_TAG"
+          docker push "$IMAGE_TAG"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_TAG")
+          echo "Tested production image: $digest" >> "$GITHUB_STEP_SUMMARY"
