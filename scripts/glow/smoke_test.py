@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import replace
@@ -86,6 +87,11 @@ def main(argv=None):
     parser.add_argument("--spark-master",default=None)
     args=parser.parse_args(argv); root=args.work_dir.resolve(); root.mkdir(parents=True,exist_ok=True)
     logging.getLogger().addHandler(logging.FileHandler(root/"smoke.log"))
+    for name in ("build.json", "environment.explicit.txt", "python-packages.txt"):
+        shutil.copyfile(Path("/opt/glow") / name, root / name)
+    run(["micromamba", "list", "--explicit", "--name", "base"], root / "ci-environment.explicit.txt")
+    run(["plink2", "--version"], root / "plink-version.txt")
+    run(["java", "-version"], root / "java-version.txt")
     data=root/"data"; data.mkdir(); generate_data(data)
     base=ScientificOptions("quantitative",phenotype_columns=("qt1","qt2"),sample_block_count=3,variants_per_block=50,batch_size=1)
     profiles=[("quantitative",base),("binary01",replace(base,trait_type="binary",phenotype_columns=("bt1","bt2"),batch_size=2)),

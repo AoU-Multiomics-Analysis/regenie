@@ -45,7 +45,9 @@ RUN python -m pip install --no-deps /tmp/glow-artifacts/*.whl \
     && chown -R 1099:1099 /work /home/spark
 COPY scripts/glow/ /opt/regenie-spark/scripts/glow/
 RUN chmod -R a+rX /opt/regenie-spark /opt/glow \
-    && python -c "import importlib.util, shutil; assert importlib.util.find_spec('pyspark') is None; assert shutil.which('java') is None"
+    && python -c "import importlib.util, shutil; assert importlib.util.find_spec('pyspark') is None; assert shutil.which('java') is None" \
+    && micromamba list --explicit --name base > /opt/glow/environment.explicit.txt \
+    && python -m pip freeze > /opt/glow/python-packages.txt
 WORKDIR /work
 USER 1099:1099
 CMD ["python", "-m", "scripts.glow.controller", "--help"]

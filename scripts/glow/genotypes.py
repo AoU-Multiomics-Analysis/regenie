@@ -54,7 +54,9 @@ def read_dosages(spark,bgen_uri,sample_uri,variants_uri,expected_sample_ids,sour
         p=g["posteriorProbabilities"]
         return F.when((F.size(p)==3)&((p[0]+p[1]+p[2])>0),p[1]+2*p[2]).otherwise(F.lit(None).cast("double"))
     frame=source.select(F.regexp_replace("contigName","^chr","").alias("contigName"),"start",
-                        F.element_at("names",1).alias("variant_id"),"referenceAllele",
+                        # PLINK writes the PVAR ID as BGEN rsID. Glow returns
+                        # names=[SNPID, rsID]; SNPID is empty in this export.
+                        F.element_at("names",2).alias("variant_id"),"referenceAllele",
                         F.element_at("alternateAlleles",1).alias("alternateAllele"),
                         F.lit(source_index).alias("source_index"),F.transform("genotypes",dosage).alias("values"))
     metadata=spark.read.option("header",True).option("sep","\t").csv(variants_uri).select(
