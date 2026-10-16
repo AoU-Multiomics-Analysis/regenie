@@ -28,7 +28,8 @@ The user must supply a suitable common-variant panel for model fitting.
 Use Glow 2.0.3 for distributed model fitting and association testing.
 Use Dataproc runtime `1.2`, whose documented components include Spark 3.5.1 and Scala 2.12.
 This matches Glow's documented Spark requirement and Scala artifact.
-Use the versioned Glow Python package and the matching `glow-spark3_2.12` JAR.
+Build the Glow Python package and matching Scala 2.12 JAR from the official 2.0.3 source release.
+Pin the source to commit `72637ad17ff267ca6bbc63cfc77c78db619f38b5`.
 [Glow installation](https://glow.readthedocs.io/en/stable/getting-started.html),
 [Dataproc runtime components](https://docs.cloud.google.com/managed-spark/docs/concepts/versions/spark-runtime-1.2).
 
@@ -254,7 +255,10 @@ Build a separate image from `mambaorg/micromamba:2.3.3`.
 Use Python 3.11.13 and PLINK 2 `2.0.0a.6.9`, consistent with the existing environment.
 Pin all direct Python and conda dependencies in committed environment files.
 Use conda-forge and bioconda where packages are available.
-Install the Glow Python package at version 2.0.3 and package the matching JAR dependencies during the image build.
+Build and install the Glow Python package at version 2.0.3 from the pinned source commit.
+Build the matching JAR and package its dependencies during the GitHub Actions image build.
+Use sbt 1.9.9 and Scala 2.12.19, as specified by that source release.
+[Glow source release](https://github.com/projectglow/glow/releases/tag/v2.0.3).
 The production job must not depend on downloading Maven packages when it starts.
 
 The image contains the preparation scripts, controller, Spark application, and required Python libraries.
