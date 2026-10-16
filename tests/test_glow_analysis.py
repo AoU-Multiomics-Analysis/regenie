@@ -33,3 +33,12 @@ class AnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"class"):
             validate_binary_blocks(pheno,{"0":["s1","s2"],"1":["s3","s4"]})
         validate_binary_blocks(pheno,{"0":["s1","s3"],"1":["s2","s4"]})
+
+    def test_prediction_reorders_traits_without_changing_their_values(self):
+        def predict(**kwargs):
+            return pd.DataFrame({"b": [20., 10.], "a": [2., 1.]},
+                                index=pd.MultiIndex.from_tuples([("s2", "1"), ("s1", "1")]))
+        fit=FittedBatch(SimpleNamespace(transform_loco=predict),None,["s1","s2"],["a","b"],"quantitative",("1","2"))
+        result=predict_chromosome(fit,"1")
+        self.assertEqual(result.columns.tolist(),["a","b"])
+        self.assertEqual(result.to_numpy().tolist(),[[1.,10.],[2.,20.]])

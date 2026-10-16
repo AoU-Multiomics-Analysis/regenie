@@ -62,9 +62,9 @@ def predict_chromosome(fit,chromosome):
     if fit.trait_type=="binary": kwargs["response"]="linear"
     result=fit.regression.transform_loco(**kwargs)
     expected=pd.MultiIndex.from_tuples([(identifier,chromosome) for identifier in fit.sample_ids],names=["sample_id","contigName"])
-    if not isinstance(result.index,pd.MultiIndex) or set(result.index)!=set(expected) or list(result.columns)!=fit.traits or not result.index.is_unique:
+    if not isinstance(result.index,pd.MultiIndex) or set(result.index)!=set(expected) or set(result.columns)!=set(fit.traits) or not result.columns.is_unique or not result.index.is_unique:
         raise ValueError("LOCO prediction sample, chromosome, or phenotype mismatch")
-    result=result.reindex(expected)
+    result=result.reindex(index=expected,columns=fit.traits)
     if not np.isfinite(result.to_numpy(float)).all():
         raise ValueError("Nonfinite LOCO prediction")
     return result

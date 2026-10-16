@@ -55,7 +55,9 @@ CMD ["python", "-m", "scripts.glow.controller", "--help"]
 FROM production AS ci-test
 USER root
 RUN micromamba install --yes --strict-channel-priority --name base --channel conda-forge pyspark=3.5.1 openjdk=17.0.15 \
-    && micromamba clean --all --yes
+    && micromamba clean --all --yes \
+    && mkdir -p /opt/conda/lib/python3.11/site-packages/pyspark/work \
+    && chown 1099:1099 /opt/conda/lib/python3.11/site-packages/pyspark/work
 ENV JAVA_HOME="/opt/conda/lib/jvm" \
     SPARK_HOME="/opt/conda/lib/python3.11/site-packages/pyspark" \
     SPARK_LOCAL_IP="127.0.0.1"

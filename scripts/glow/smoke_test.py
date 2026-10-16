@@ -93,10 +93,12 @@ def main(argv=None):
     run(["micromamba", "list", "--explicit", "--name", "base"], root / "ci-environment.explicit.txt")
     run(["plink2", "--version"], root / "plink-version.txt")
     run(["java", "-version"], root / "java-version.txt")
+    if not os.access(Path(os.environ["SPARK_HOME"]) / "work", os.W_OK):
+        raise RuntimeError("CI Spark worker directory must be writable by the image user")
     data=root/"data"; data.mkdir(); generate_data(data)
     base=ScientificOptions("quantitative",phenotype_columns=("qt1","qt2"),sample_block_count=3,variants_per_block=50,batch_size=1)
-    profiles=[("quantitative",base),("binary01",replace(base,trait_type="binary",phenotype_columns=("bt1","bt2"),batch_size=2)),
-              ("binary12",replace(base,trait_type="binary",phenotype_columns=("bt1_12","bt2_12"),binary_encoding="12",batch_size=2))]
+    profiles=[("quantitative",base),("binary01",replace(base,trait_type="binary",phenotype_columns=("bt2","bt1"),batch_size=2)),
+              ("binary12",replace(base,trait_type="binary",phenotype_columns=("bt2_12","bt1_12"),binary_encoding="12",batch_size=2))]
     prepared={}
     for name,options in profiles:
         prepared[name]=prepare_cohort(data/"whole.psam",data/"phenotypes.tsv",data/"covariates.tsv",None,None,options,root/(name+"_prepared"))
