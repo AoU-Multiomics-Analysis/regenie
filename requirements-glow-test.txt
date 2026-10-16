@@ -1,0 +1,7 @@
+numpy==1.26.4
+pandas==1.5.3
+scipy==1.11.4
+statsmodels==0.14.4
+google-cloud-dataproc==5.9.0
+google-cloud-storage==2.16.0
+google-api-core==2.19.1

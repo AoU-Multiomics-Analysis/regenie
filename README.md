@@ -2,6 +2,7 @@
 
 <!-- workflow-badges:start -->
 [![Docker Image CI](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/docker-image.yml/badge.svg)](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/docker-image.yml)
+[![Glow Spark Image](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/glow-image.yml/badge.svg)](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/glow-image.yml)
 [![R lint](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/r-lint.yml/badge.svg)](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/r-lint.yml)
 [![Update README workflow badges](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/update-readme-badges.yml/badge.svg)](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/update-readme-badges.yml)
 [![WDL validation](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/wdl-validation.yml/badge.svg)](https://github.com/AoU-Multiomics-Analysis/regenie/actions/workflows/wdl-validation.yml)
@@ -11,6 +12,11 @@
 Run REGENIE 4.1.2 with PLINK 2 PGEN, PVAR, and PSAM inputs in Terra.
 The workflow uses WDL 1.0. It supports quantitative traits and binary traits.
 Select one trait type for each run.
+
+A separate [Glow/Spark workflow](docs/glow-terra.md) runs through WDL on one Terra
+VM, like MTtoVCF. It uses normal Terra file handling and has no project or service
+account inputs. An optional [Dataproc workflow](docs/glow-dataproc.md) can run on
+multiple VMs. Neither Glow workflow has been tested on Terra.
 
 ## Workflow
 

@@ -1,0 +1,32 @@
+{
+  "GlowRegenie.step1_genotypes": {
+    "pgen": "gs://EXAMPLE-INPUT-BUCKET/model/whole.pgen",
+    "pvar": "gs://EXAMPLE-INPUT-BUCKET/model/whole.pvar",
+    "psam": "gs://EXAMPLE-INPUT-BUCKET/model/whole.psam"
+  },
+  "GlowRegenie.step1_variant_ids": "gs://EXAMPLE-INPUT-BUCKET/model/common-variants.txt",
+  "GlowRegenie.association_genotypes": [
+    {
+      "pgen": "gs://EXAMPLE-INPUT-BUCKET/association/whole.pgen",
+      "pvar": "gs://EXAMPLE-INPUT-BUCKET/association/whole.pvar",
+      "psam": "gs://EXAMPLE-INPUT-BUCKET/association/whole.psam"
+    }
+  ],
+  "GlowRegenie.phenotypes": "gs://EXAMPLE-INPUT-BUCKET/phenotypes.tsv",
+  "GlowRegenie.covariates": "gs://EXAMPLE-INPUT-BUCKET/covariates.tsv",
+  "GlowRegenie.trait_type": "binary",
+  "GlowRegenie.phenotype_columns": "disease_a,disease_b",
+  "GlowRegenie.covariate_columns": "age,sex,pc1,pc2",
+  "GlowRegenie.categorical_covariates": "sex",
+  "GlowRegenie.missing_data_policy": "error",
+  "GlowRegenie.docker_image": "ghcr.io/aou-multiomics-analysis/regenie-glow@sha256:c2d18e1db4049aa2c3fe9a9833037cfddad441d3c2074e04b9c9fb6fb00956b2",
+  "GlowRegenie.batch_size": 50,
+  "GlowRegenie.variants_per_block": 1000,
+  "GlowRegenie.sample_block_count": 10,
+  "GlowRegenie.min_mac": 5,
+  "GlowRegenie.seed": 1,
+  "GlowRegenie.binary_encoding": "01",
+  "GlowRegenie.min_cases": 10,
+  "GlowRegenie.min_controls": 10,
+  "GlowRegenie.firth_threshold": 0.01
+}

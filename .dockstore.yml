@@ -6,3 +6,15 @@ workflows:
     testParameterFiles:
       - /examples/quantitative.inputs.json
       - /examples/binary.inputs.json
+  - name: glow-regenie
+    subclass: WDL
+    primaryDescriptorPath: /workflows/glow_regenie.wdl
+    testParameterFiles:
+      - /examples/glow.quantitative.inputs.json
+      - /examples/glow.binary.inputs.json
+  - name: glow-regenie-dataproc
+    subclass: WDL
+    primaryDescriptorPath: /workflows/glow_regenie_dataproc.wdl
+    testParameterFiles:
+      - /examples/glow.dataproc.quantitative.inputs.json
+      - /examples/glow.dataproc.binary.inputs.json

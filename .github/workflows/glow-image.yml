@@ -1,0 +1,93 @@
+name: Glow Spark Image
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['scripts/glow/**/*.py']
+  pull_request:
+    branches: [main]
+    paths: ['scripts/glow/**/*.py']
+permissions:
+  contents: read
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect included script changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before || github.event.pull_request.base.sha }}
+          AFTER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            build=true
+          elif ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            echo "Comparison base is unavailable; validate the included source."
+            build=true
+          elif git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- ':(glob)scripts/glow/**/*.py'; then
+            build=false
+          else
+            diff_status=$?
+            if [[ "$diff_status" != 1 ]]; then exit "$diff_status"; fi
+            build=true
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Build included Glow scripts: $build"
+      - name: Set image reference
+        if: steps.changes.outputs.build == 'true'
+        id: image
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-glow"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$image:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "local_tag=$image:local-sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build production and CI images on GitHub
+        if: steps.changes.outputs.build == 'true'
+        run: |
+          docker build --platform linux/amd64 --target production --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-production .
+          docker build --platform linux/amd64 --target terra-local --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-local .
+          docker build --platform linux/amd64 --target ci-test --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-ci .
+      - name: Run synthetic Spark tests
+        if: steps.changes.outputs.build == 'true'
+        run: |
+          mkdir -p test-output
+          chmod 777 test-output
+          docker run --rm -v "$PWD/test-output:/work" glow-ci python -m scripts.glow.smoke_test --work-dir /work/smoke
+      - name: Upload Spark test evidence
+        if: always() && steps.changes.outputs.build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: glow-synthetic-smoke
+          path: test-output/
+          retention-days: 7
+      - name: Log in to GitHub Container Registry
+        if: steps.changes.outputs.build == 'true' && github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested production image
+        if: steps.changes.outputs.build == 'true' && github.event_name != 'pull_request'
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          LOCAL_IMAGE_TAG: ${{ steps.image.outputs.local_tag }}
+        run: |
+          docker tag glow-production "$IMAGE_TAG"
+          docker push "$IMAGE_TAG"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_TAG")
+          echo "Tested Dataproc image: $digest" >> "$GITHUB_STEP_SUMMARY"
+          docker tag glow-local "$LOCAL_IMAGE_TAG"
+          docker push "$LOCAL_IMAGE_TAG"
+          local_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$LOCAL_IMAGE_TAG")
+          echo "Tested Terra local image: $local_digest" >> "$GITHUB_STEP_SUMMARY"

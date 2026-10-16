@@ -34,7 +34,10 @@ class ExampleTests(unittest.TestCase):
 
     def test_examples_supply_required_inputs_and_preserve_file_types(self):
         document = WDL.load(str(ROOT / "workflows/regenie.wdl"))
-        for path in (ROOT / "examples").glob("*.json"):
+        descriptor = yaml.safe_load((ROOT / ".dockstore.yml").read_text())
+        native = next(item for item in descriptor["workflows"] if item["name"] == "regenie")
+        for example in native["testParameterFiles"]:
+            path = ROOT / example.lstrip("/")
             with self.subTest(example=path.name):
                 values = WDL.values_from_json(json.loads(path.read_text()), document.workflow.available_inputs,
                                               document.workflow.required_inputs, namespace="Regenie")
@@ -46,10 +49,10 @@ class ExampleTests(unittest.TestCase):
 
     def test_dockstore_descriptor_points_to_existing_files(self):
         descriptor = yaml.safe_load((ROOT / ".dockstore.yml").read_text())
-        workflow = descriptor["workflows"][0]
-        self.assertTrue((ROOT / workflow["primaryDescriptorPath"].lstrip("/")).is_file())
-        for path in workflow["testParameterFiles"]:
-            self.assertTrue((ROOT / path.lstrip("/")).is_file())
+        for workflow in descriptor["workflows"]:
+            self.assertTrue((ROOT / workflow["primaryDescriptorPath"].lstrip("/")).is_file())
+            for path in workflow["testParameterFiles"]:
+                self.assertTrue((ROOT / path.lstrip("/")).is_file())
 
 
 if __name__ == "__main__":

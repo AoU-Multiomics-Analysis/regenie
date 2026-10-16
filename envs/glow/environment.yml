@@ -1,0 +1,21 @@
+name: base
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11.13
+  - pip=25.1.1
+  - plink2=2.0.0a.6.9
+  - numpy=1.26.4
+  - pandas=1.5.3
+  - scipy=1.11.4
+  - statsmodels=0.14.4
+  - pyarrow=15.0.2
+  - nptyping=2.5.0
+  - opt_einsum=3.4.0
+  - typeguard=2.13.3
+  - google-cloud-dataproc=5.9.0
+  - google-cloud-storage=2.16.0
+  - google-api-core=2.19.1
+  - procps-ng=4.0.4
+  - tini=0.19.0
