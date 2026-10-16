@@ -131,15 +131,21 @@ def main(argv=None):
                 pd.testing.assert_frame_equal(results[name],result,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
             else: results[name]=result
     # Exercise the exact single-VM CLI used by the WDL, including file lists and collection.
+    localized=root/"localized ' % [files]"; localized.mkdir()
+    localized_model={}; localized_association={}
+    for kind in ("bgen","sample","variants"):
+        for role,source,paths in (("model",model,localized_model),("association",association,localized_association)):
+            target=localized/(role+" ' % [data]."+kind)
+            shutil.copyfile(getattr(source,kind),target); paths[kind]=target
     for name,options in profiles:
         cohort=prepared[name]; output=root/(name+"_terra_local")
         command=[sys.executable,"-m","scripts.glow.local_runner","--cpu","2","--memory-gb","4","--driver-memory-gb","1",
                  "--parallelism","2","--shuffle-partitions","2","--out-dir",str(output)]
-        for flag,path in (("model-bgen",model.bgen),("model-sample",model.sample),("model-variants",model.variants),
+        for flag,path in (("model-bgen",localized_model["bgen"]),("model-sample",localized_model["sample"]),("model-variants",localized_model["variants"]),
                           ("sample-map",cohort.sample_map),("phenotypes",cohort.phenotypes),("covariates",cohort.covariates),("phenotype-batches",cohort.batches)):
             command += ["--"+flag,str(path)]
         for kind in ("bgen","sample","variants"):
-            file_list=root/(name+"_"+kind+".txt"); file_list.write_text(str(getattr(association,kind))+"\n")
+            file_list=root/(name+"_"+kind+".txt"); file_list.write_text(str(localized_association[kind])+"\n")
             command += ["--association-"+kind+"-list",str(file_list)]
         run(command+scientific_arguments(options),root/(name+"_terra_local.log"))
         pd.testing.assert_frame_equal(results[name],read_associations(output,collected=True),check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
@@ -147,7 +153,7 @@ def main(argv=None):
     second["phenotype"]=second.phenotype.str.removesuffix("_12")
     pd.testing.assert_frame_equal(first,second,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
     (root/"summary.json").write_text(json.dumps({"status":"passed","samples":240,"variants":200,
-                  "profiles":list(results),"single_vm_cli":True,"separate_worker_processes":args.spark_master is None,"rtol":1e-6,"atol":1e-8},indent=2)+"\n")
+                  "profiles":list(results),"single_vm_cli":True,"localized_special_paths":True,"separate_worker_processes":args.spark_master is None,"rtol":1e-6,"atol":1e-8},indent=2)+"\n")
     LOG.info("Synthetic Spark tests passed")
     return 0
 if __name__=="__main__": raise SystemExit(main())

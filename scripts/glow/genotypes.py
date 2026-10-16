@@ -1,5 +1,6 @@
 """Validate BGEN probabilities and retain observed allele counts."""
 import math
+from .storage import spark_path
 
 def dosage_from_probabilities(values, ploidy=2, phased=False):
     if not values or all(value==0 for value in values):
@@ -27,7 +28,7 @@ def impute_values(values):
 
 def read_dosages(spark,bgen_uri,sample_uri,variants_uri,expected_sample_ids,source_index):
     from pyspark.sql import functions as F
-    source=spark.read.format("bgen").option("emitHardCalls","false").option("useBgenIndex","false").load(bgen_uri)
+    source=spark.read.format("bgen").option("emitHardCalls","false").option("useBgenIndex","false").load(spark_path(bgen_uri))
     if not expected_sample_ids or len(set(expected_sample_ids))!=len(expected_sample_ids):
         raise ValueError("Invalid expected sample IDs")
     first=source.select(F.transform("genotypes",lambda g:g["sampleId"]).alias("ids")).first()
@@ -59,7 +60,7 @@ def read_dosages(spark,bgen_uri,sample_uri,variants_uri,expected_sample_ids,sour
                         F.element_at("names",2).alias("variant_id"),"referenceAllele",
                         F.element_at("alternateAlleles",1).alias("alternateAllele"),
                         F.lit(source_index).alias("source_index"),F.transform("genotypes",dosage).alias("values"))
-    metadata=spark.read.option("header",True).option("sep","\t").csv(variants_uri).select(
+    metadata=spark.read.option("header",True).option("sep","\t").csv(spark_path(variants_uri)).select(
         "variant_id",F.col("chromosome").alias("expected_chr"),F.col("position").cast("long").alias("expected_pos"),
         F.col("referenceAllele").alias("expected_ref"),F.col("alternateAllele").alias("expected_alt"))
     joined=frame.join(metadata,"variant_id","full")

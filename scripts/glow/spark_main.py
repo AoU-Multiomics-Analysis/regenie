@@ -11,7 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 import pandas as pd
 from scripts.glow.contracts import GLOW_COMMIT, LOG, OutputArtifact, add_scientific_arguments, options_from_args, setup_logging
-from scripts.glow.storage import checksum, collect_outputs, list_uris, local_uri, object_hash, object_size, publish_outputs, remote_blob, upload_file
+from scripts.glow.storage import checksum, collect_outputs, list_uris, local_uri, object_hash, object_size, publish_outputs, remote_blob, spark_path, upload_file
 
 def local_copy(client,uri,path):
     if uri.startswith("file:"): shutil.copyfile(local_uri(uri),path)
@@ -74,9 +74,9 @@ def main(argv=None):
                 frame=read_dosages(spark,bgen,sample_path.as_uri(),variants,ids,index)
                 frame,report=retain_usable_variants(frame,None if role=="model" else options.min_mac)
                 path=run_uri+"/work/"+role+"_"+str(index)
-                frame.write.mode("errorifexists").parquet(path)
+                frame.write.mode("errorifexists").parquet(spark_path(path))
                 counts["sources"].append(dict(report,role=role,source_index=index))
-                return spark.read.parquet(path)
+                return spark.read.parquet(spark_path(path))
             model=load_source(args.model_bgen,args.model_sample,args.model_variants,0,"model")
             associations=[load_source(b,s,v,i,"association") for i,(b,s,v) in enumerate(zip(args.association_bgen,args.association_sample,args.association_variants))]
             chromosomes=sorted({row.contigName for frame in associations for row in frame.select("contigName").distinct().collect()},key=int)
@@ -106,7 +106,7 @@ def main(argv=None):
                             result=test_chromosome(frame,pheno,covariates,offsets,chromosome,options)
                             result=result.drop("values").withColumn("sample_count",F.lit(len(ids))).withColumn("effect_allele",F.col("alternateAllele"))
                             prefix=run_uri+f"/results/association_parts/src{source_index}/chr{chromosome}/batch{index}"
-                            result.write.mode("errorifexists").option("header",True).option("sep","\t").option("nullValue","NA").option("compression","gzip").csv(prefix)
+                            result.write.mode("errorifexists").option("header",True).option("sep","\t").option("nullValue","NA").option("compression","gzip").csv(spark_path(prefix))
                             parts=[uri for uri in list_uris(client,prefix) if uri.endswith(".csv.gz")]
                             if not parts: raise ValueError("Association output has no parts")
                             for part_index,uri in enumerate(parts):

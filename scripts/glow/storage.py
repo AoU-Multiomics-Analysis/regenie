@@ -33,6 +33,10 @@ def local_uri(uri):
         raise ValueError("Invalid local test URI")
     return Path(unquote(parts.path))
 
+def spark_path(uri):
+    """Hadoop Path(String) expects unescaped local path components."""
+    return str(local_uri(uri)) if uri.startswith('file:') else uri
+
 def remote_blob(client,uri):
     bucket,key=split_gs(uri)
     return client.bucket(bucket).blob(key)

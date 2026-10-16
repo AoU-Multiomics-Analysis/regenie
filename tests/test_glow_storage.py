@@ -87,3 +87,10 @@ class StorageTests(unittest.TestCase):
         self.assertNotEqual(staged[0].sha256, staged[1].sha256)
         self.assertTrue(staged[0].uri.endswith("association/0/bgen"))
         self.assertTrue(staged[1].uri.endswith("association/1/bgen"))
+
+class SparkPathTests(unittest.TestCase):
+    def test_local_uri_is_decoded_for_hadoop_but_cloud_uri_is_preserved(self):
+        from scripts.glow.storage import spark_path
+        path=Path("/work/space ' percent%/data.bgen")
+        self.assertEqual(spark_path(path.as_uri()),str(path))
+        self.assertEqual(spark_path('gs://bucket/inputs/data.bgen'),'gs://bucket/inputs/data.bgen')

@@ -54,6 +54,10 @@ def run_local(options,science,inputs,out_dir):
     # Keep work on the task disk. Cromwell collects only the declared result files.
     with tempfile.TemporaryDirectory(prefix='glow-local-',dir=out_dir.parent) as directory:
         work=Path(directory); scratch=work/'scratch'; scratch.mkdir()
+        # Stable names prevent Hadoop glob characters in localized filenames.
+        for name,path in list(by_name.items()):
+            alias=work/'inputs'/name; alias.parent.mkdir(parents=True,exist_ok=True)
+            alias.symlink_to(path); by_name[name]=alias
         run_uri=(work/'run').as_uri()
         command=spark_command(options,scratch)+[str(Path(__file__).with_name('spark_main.py'))]
         for name,flag in (('model/bgen','model-bgen'),('model/sample','model-sample'),('model/variants','model-variants'),
