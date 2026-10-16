@@ -52,6 +52,9 @@ class GlowWdlTests(unittest.TestCase):
                             value=declaration.expr.eval(env,std) if declaration.expr else WDL.Value.Null()
                             env=env.bind(declaration.name,value)
                     command=task.command.eval(env,std).value
+                    if task.name=="RunGlowAnalysis":
+                        self.assertNotIn("--project",command)
+                        self.assertNotIn("--service-account",command)
                     probe=root/"probe.py"
                     probe.write_text("""import pathlib,sys
 args=sys.argv[1:]

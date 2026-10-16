@@ -29,10 +29,10 @@ workflow GlowRegenie {
     Float firth_threshold = 0.01
     Int seed = 1
     Boolean inverse_normal_transform = false
-    String project
+    String? project
     String region
     String subnetwork_uri
-    String service_account
+    String? service_account
     String staging_bucket
     String staging_prefix
     String run_id
@@ -329,10 +329,10 @@ task RunGlowAnalysis {
     Float firth_threshold = 0.01
     Int seed = 1
     Boolean inverse_normal_transform = false
-    String project
+    String? project
     String region
     String subnetwork_uri
-    String service_account
+    String? service_account
     String staging_bucket
     String staging_prefix
     String run_id
@@ -379,10 +379,10 @@ task RunGlowAnalysis {
       --association-sample-list association_samples.txt \
       --association-variants-list association_variants.txt \
       --terra-image '~{sub(docker_image, "'", "'\"'\"'")}' \
-      --project '~{sub(project, "'", "'\"'\"'")}' \
+      ~{if defined(project) then "--project '" + sub(select_first([project]), "'", "'\"'\"'") + "'" else ""} \
       --region '~{sub(region, "'", "'\"'\"'")}' \
       --subnetwork-uri '~{sub(subnetwork_uri, "'", "'\"'\"'")}' \
-      --service-account '~{sub(service_account, "'", "'\"'\"'")}' \
+      ~{if defined(service_account) then "--service-account '" + sub(select_first([service_account]), "'", "'\"'\"'") + "'" else ""} \
       --staging-bucket '~{sub(staging_bucket, "'", "'\"'\"'")}' \
       --staging-prefix '~{sub(staging_prefix, "'", "'\"'\"'")}' \
       --run-id '~{sub(run_id, "'", "'\"'\"'")}' \

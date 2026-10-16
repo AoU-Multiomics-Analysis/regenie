@@ -80,12 +80,31 @@ A task checks that its local input files are readable before computation.
 Files listed inside a user JSON or text file are not automatically localized.
 Do not replace the explicit genotype File fields with a list of cloud paths.
 
+## Project and service account defaults
+
+Leave `project` and `service_account` unset to use the Google project and
+service account attached to the Terra controller task VM. The controller reads
+these values from the VM metadata service and logs the resolved names.
+You do not need a service-account key or a new account for this detection.
+Explicit values remain available as overrides.
+If metadata is unavailable, the controller stops and asks for the missing override.
+It does not switch to the Compute Engine default service account.
+
+Terra configures the identity for a Hail notebook or managed Spark environment.
+This WDL starts a separate Dataproc Serverless batch. Its attached account must
+have permission to submit that batch and act as the workload account. The
+workload account must have access to its inputs, outputs, network, and image.
+Automatic detection does not grant those permissions or create cloud resources.
+See [Terra service accounts](https://support.terra.bio/hc/en-us/articles/7448594459931-How-to-use-a-service-account-in-Terra)
+and [Google VM metadata](https://docs.cloud.google.com/compute/docs/metadata/predefined-metadata-keys).
+
 ## Google Cloud setup
 
 Ask the workspace administrator to prepare these resources.
 This guide does not grant roles or create resources.
 
-1. Choose a billed Google project with sufficient regional CPU, memory, disk,
+1. Use the Terra task's Google project by default, or set `project` to an approved
+   alternative. It must have sufficient regional CPU, memory, disk,
    and Dataproc batch quotas. Enable the Dataproc, Compute Engine, Cloud Storage,
    and Artifact Registry APIs.
 2. Select a subnet in the batch region. Configure internal Spark traffic,
@@ -100,8 +119,10 @@ This guide does not grant roles or create resources.
    run prefix. For runtime 1.2, `roles/dataproc.editor` and
    `roles/iam.serviceAccountUser` on the workload account are documented role
    choices. A custom role can restrict permissions.
-5. Set `service_account` to the separate **Spark workload service account**.
-   For runtime 1.2 it needs Dataproc Worker permissions, access to staged inputs,
+5. The **Spark workload service account** defaults to the account attached to
+   the Terra task VM. Set `service_account` only to use another approved account.
+   For runtime 1.2 the workload account needs Dataproc Worker permissions,
+   access to staged inputs,
    permission to write/list result objects, and Artifact Registry Reader on the
    image repository. The Dataproc service agent also needs its documented
    subnet and image access, including Shared VPC permissions where applicable.
@@ -155,7 +176,8 @@ versions and records the resolved runtime. Test a runtime change before study us
 1. Import Dockstore workflow `glow-regenie`, or import
    [workflows/glow_regenie.wdl](../workflows/glow_regenie.wdl) directly.
 2. Load the matching example JSON and replace every placeholder.
-3. Set the project, region, subnet, workload account, staging bucket, and prefix.
+3. Set the region, subnet, staging bucket, and prefix. Leave `project` and
+   `service_account` unset to detect them from the Terra task VM, or supply overrides.
    Set a new `run_id` with 4–40 lowercase letters, digits, or hyphens.
    Start it with a letter.
 4. Disable Terra call caching for initial use. Review input files and resources.

@@ -7,11 +7,50 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+from urllib.request import Request, ProxyHandler, build_opener
 from google.cloud import dataproc_v1 as dataproc
 from google.cloud import storage
 from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, NotFound, ServiceUnavailable, InternalServerError
 from .contracts import SPARK_ARROW_PROPERTIES, GLOW_COMMIT, LOG, InputArtifact, add_scientific_arguments, options_from_args, require_local_file, scientific_arguments, setup_logging
 from .storage import input_identity, stage_inputs, collect_outputs, split_gs
+
+def read_instance_metadata(path):
+    """Read identity from this task VM; never request a token or a key."""
+    request = Request("http://metadata.google.internal/computeMetadata/v1/" + path,
+                      headers={"Metadata-Flavor": "Google"})
+    # The metadata request must stay on the VM's internal network.
+    opener = build_opener(ProxyHandler({}))
+    with opener.open(request, timeout=3) as response:
+        if response.headers.get("Metadata-Flavor") != "Google":
+            raise ValueError("Invalid Google metadata response")
+        raw = response.read(1025)
+        if len(raw) > 1024:
+            raise ValueError("Google metadata identity response is too large")
+        return raw.decode("utf-8").strip()
+
+
+def resolve_execution_identity(project=None, service_account=None, *, metadata_reader=None):
+    """Use explicit overrides, otherwise the project and account on the task VM."""
+    reader = metadata_reader or read_instance_metadata
+    resolved = []
+    for value, path, flag in (
+        (project, "project/project-id", "--project"),
+        (service_account, "instance/service-accounts/default/email", "--service-account"),
+    ):
+        if value is None:
+            try:
+                value = reader(path)
+                if not isinstance(value, str) or not value:
+                    raise ValueError("Empty identity value")
+            except (OSError, ValueError, UnicodeError) as error:
+                raise ValueError(
+                    f"Cannot detect {flag} from the Terra task VM. "
+                    f"Set {flag} explicitly when metadata is unavailable."
+                ) from error
+        resolved.append(value)
+    LOG.info("Spark execution project: %s; workload service account: %s", *resolved)
+    return tuple(resolved)
+
 
 @dataclass(frozen=True)
 class CloudOptions:
@@ -120,7 +159,7 @@ def run_controller(options,science,inputs,out_dir,batch_client=None,storage_clie
     name=parent+"/batches/"+options.run_id+"-glow"
     request_id=str(uuid.uuid5(uuid.NAMESPACE_URL,parent+"/"+options.run_id+"/"+identity["sha256"]))
     out_dir=Path(out_dir); out_dir.mkdir(parents=True,exist_ok=True)
-    report={"batch":name,"run_uri":run_uri,"identity_sha256":identity["sha256"],"requested_runtime":"1.2","state":"UNKNOWN"}
+    report={"batch":name,"run_uri":run_uri,"identity_sha256":identity["sha256"],"requested_runtime":"1.2","service_account":options.service_account,"state":"UNKNOWN"}
     stop=[False]; handlers={}
     def on_signal(signum,frame): stop[0]=True
     for signum in (signal.SIGTERM,signal.SIGINT):
@@ -198,7 +237,7 @@ def main(argv=None):
     setup_logging(); parser=argparse.ArgumentParser(description=__doc__)
     for field in fields(CloudOptions):
         name="--"+field.name.replace("_","-")
-        if field.type is str: parser.add_argument(name,required=True)
+        if field.type is str: parser.add_argument(name,required=field.name not in ("project","service_account"))
         else: parser.add_argument(name,type=int,default=field.default)
     for name in ("model-bgen","model-sample","model-variants","sample-map","phenotypes","covariates","phenotype-batches","out-dir"):
         parser.add_argument("--"+name,type=Path,required=True)
@@ -206,7 +245,9 @@ def main(argv=None):
         parser.add_argument("--association-"+name+"-list",type=Path,required=True)
     add_scientific_arguments(parser)
     args=parser.parse_args(argv)
-    cloud=CloudOptions(**{f.name:getattr(args,f.name) for f in fields(CloudOptions)})
+    cloud_values={f.name:getattr(args,f.name) for f in fields(CloudOptions)}
+    cloud_values["project"],cloud_values["service_account"]=resolve_execution_identity(args.project,args.service_account)
+    cloud=CloudOptions(**cloud_values)
     artifacts=[InputArtifact(name,require_local_file(getattr(args,flag))) for name,flag in (
         ("model/bgen","model_bgen"),("model/sample","model_sample"),("model/variants","model_variants"),("sample_map","sample_map"),
         ("phenotypes","phenotypes"),("covariates","covariates"),("phenotype_batches","phenotype_batches"))]

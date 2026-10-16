@@ -138,3 +138,25 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(report["state"], "FAILED")
         self.assertIn("error", report)
         self.assertFalse((self.root / "out/output_manifest.json").exists())
+
+    def test_cli_uses_detected_identity_when_overrides_are_absent(self):
+        from unittest.mock import patch
+        from dataclasses import fields
+        from scripts.glow.controller import main, CloudOptions
+        arguments=[]
+        options=cloud()
+        for field in fields(CloudOptions):
+            if field.type is str and field.name not in ("project","service_account"):
+                arguments.extend(["--"+field.name.replace("_","-"),getattr(options,field.name)])
+        arguments.extend(["--trait-type","quantitative","--out-dir",str(self.root/"out")])
+        for name in ("model-bgen","model-sample","model-variants","sample-map","phenotypes","covariates","phenotype-batches"):
+            arguments.extend(["--"+name,str(self.path)])
+        listing=self.root/"files.txt"; listing.write_text(str(self.path)+"\n")
+        for kind in ("bgen","sample","variants"):
+            arguments.extend(["--association-"+kind+"-list",str(listing)])
+        values={"project/project-id":options.project,"instance/service-accounts/default/email":options.service_account}
+        with patch("scripts.glow.controller.read_instance_metadata",side_effect=values.__getitem__), \
+             patch("scripts.glow.controller.run_controller",return_value=[]) as run, \
+             patch("scripts.glow.controller.setup_logging"):
+            self.assertEqual(main(arguments),0)
+        self.assertEqual(run.call_args.args[0],options)
