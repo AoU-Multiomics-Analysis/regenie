@@ -126,6 +126,22 @@ def run_controller(options,science,inputs,out_dir,batch_client=None,storage_clie
     for signum in (signal.SIGTERM,signal.SIGINT):
         handlers[signum]=signal.signal(signum,on_signal)
     batch=None
+    verified_attachment=False
+    def cancel_remote():
+        if "cancellation" in report:
+            return
+        try:
+            if batch is None or not batch.operation:
+                raise RuntimeError("Batch has no cancellable operation")
+            client.cancel_operation(request={"name":batch.operation},retry=None,timeout=60)
+            report["cancellation"]="requested"
+        except Exception as error:
+            report["cancellation"]="failed: "+str(error)
+        LOG.info("Batch %s cancellation %s",name,report["cancellation"])
+    def stop_if_needed():
+        if stop[0] or clock()>deadline:
+            cancel_remote()
+            raise RuntimeError("Controller stopped or timed out; remote lifetime still applies")
     try:
         for attempt in range(6):
             try:
@@ -146,6 +162,7 @@ def run_controller(options,science,inputs,out_dir,batch_client=None,storage_clie
         previous=None
         while True:
             if not request_matches(batch,expected): raise ValueError("Existing batch differs from the current run identity/request")
+            verified_attachment=True
             state=dataproc.Batch.State(batch.state).name
             report.update(state=state,resolved_runtime=batch.runtime_config.version,operation=batch.operation,uuid=batch.uuid)
             (out_dir/"execution.json").write_text(json.dumps(report,indent=2)+"\n")
@@ -154,22 +171,18 @@ def run_controller(options,science,inputs,out_dir,batch_client=None,storage_clie
             if state=="SUCCEEDED": return collect_outputs(files,run_uri,identity["sha256"],out_dir)
             if state in ("FAILED","CANCELLED"): raise RuntimeError("Remote batch "+state+": "+batch.state_message)
             if state not in ("PENDING","RUNNING","CANCELLING"): raise RuntimeError("Unknown remote batch state "+state)
-            if stop[0] or clock()>deadline:
-                try:
-                    if not batch.operation: raise RuntimeError("Batch has no cancellable operation")
-                    client.cancel_operation(request={"name":batch.operation},retry=None,timeout=60)
-                    report["cancellation"]="requested"
-                except Exception as error:
-                    report["cancellation"]="failed: "+str(error)
-                raise RuntimeError("Controller stopped or timed out; remote lifetime still applies")
+            stop_if_needed()
             sleeper(options.poll_seconds)
             for attempt in range(4):
+                stop_if_needed()
                 try:
                     batch=client.get_batch(name=name,retry=None,timeout=60); break
                 except (DeadlineExceeded,ServiceUnavailable,InternalServerError):
                     if attempt==3: raise
                     sleeper(min(2**attempt,30))
     except Exception as error:
+        if stop[0] and verified_attachment and batch.state in (dataproc.Batch.State.PENDING,dataproc.Batch.State.RUNNING,dataproc.Batch.State.CANCELLING):
+            cancel_remote()
         report["error"]=str(error)
         raise
     finally:

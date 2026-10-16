@@ -19,6 +19,9 @@ def local_copy(client,uri,path):
     else: raise ValueError("Expected an explicitly staged gs:// input or local CI file URI")
     return path
 
+def read_phenotype_batches(path):
+    return pd.read_csv(path, sep="\t", dtype={"trait_name": str}, keep_default_na=False)
+
 def parse_arguments(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ("model-bgen","model-sample","model-variants","sample-map","phenotypes","covariates","phenotype-batches","output-prefix","identity-sha256"):
@@ -62,7 +65,7 @@ def main(argv=None):
                 small[name]=local_copy(client,getattr(args,name),work/(name+".tsv"))
             ids=pd.read_csv(small["sample_map"],sep="\t",dtype=str,usecols=["sample_id"]).sample_id.tolist()
             covariates=pd.read_csv(small["covariates"],sep="\t",index_col="sample_id")
-            batches=pd.read_csv(small["phenotype_batches"],sep="\t",dtype={"trait_name":str})
+            batches=read_phenotype_batches(small["phenotype_batches"])
             if covariates.index.tolist()!=ids: raise ValueError("Prepared covariate sample order mismatch")
             def load_source(bgen,sample,variants,index,role):
                 sample_path=local_copy(client,sample,work/(role+"_sample_"+str(index)+".sample"))

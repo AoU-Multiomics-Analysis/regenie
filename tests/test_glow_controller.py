@@ -6,7 +6,7 @@ from google.cloud import dataproc_v1 as d
 from google.api_core.exceptions import NotFound, DeadlineExceeded
 from scripts.glow.contracts import ScientificOptions, InputArtifact, StagedArtifact
 from scripts.glow.controller import CloudOptions, make_batch, run_controller
-from test_glow_storage import Client, StorageTests
+from test_glow_storage import Client
 
 DIGEST="a"*64
 def cloud():
@@ -69,3 +69,70 @@ class ControllerTests(unittest.TestCase):
                               self.root/"out2",remote,client,sleeper=lambda _:None)
         self.assertEqual(len(again),3)
         self.assertEqual(remote.creates,1)
+
+    def active_remote(self, state=d.Batch.State.RUNNING):
+        class Remote:
+            def __init__(self):
+                self.batch = None
+                self.creates = 0
+                self.cancellations = []
+                self.fail_cancel = False
+                self.outage = False
+            def get_batch(self, **kwargs):
+                if self.outage:
+                    from google.api_core.exceptions import ServiceUnavailable
+                    raise ServiceUnavailable("status unavailable")
+                if self.batch is None: raise NotFound("missing")
+                return self.batch
+            def create_batch(self, request, **kwargs):
+                self.creates += 1
+                self.batch = d.Batch(request["batch"])
+                self.batch.state = state
+                self.batch.operation = "projects/project-one/regions/us-central1/operations/one"
+            def cancel_operation(self, request, **kwargs):
+                self.cancellations.append(request["name"])
+                if self.fail_cancel: raise RuntimeError("cancel unavailable")
+        return Remote()
+
+    def run_remote(self, remote, **kwargs):
+        return run_controller(cloud(), ScientificOptions("quantitative"),
+                              [InputArtifact(n, self.path) for n in self.names],
+                              self.root / "out", remote, Client(), **kwargs)
+
+    def test_stop_signal_with_status_outage_requests_cancellation(self):
+        import signal
+        remote = self.active_remote()
+        def sleep(seconds):
+            if seconds == 30:
+                remote.outage = True
+                signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        with self.assertRaisesRegex(RuntimeError, "stopped"):
+            self.run_remote(remote, sleeper=sleep)
+        self.assertEqual(remote.creates, 1)
+        self.assertEqual(remote.cancellations, [remote.batch.operation])
+        report = __import__("json").loads((self.root / "out/execution.json").read_text())
+        self.assertEqual(report["cancellation"], "requested")
+
+    def test_deadline_records_cancellation_failure_and_normal_polling(self):
+        remote = self.active_remote()
+        remote.fail_cancel = True
+        now = [0]
+        sleeps = []
+        def sleep(seconds):
+            sleeps.append(seconds)
+            if seconds == 30: now[0] = 24000
+        with self.assertRaisesRegex(RuntimeError, "timed out"):
+            self.run_remote(remote, sleeper=sleep, clock=lambda: now[0])
+        self.assertEqual(sleeps, [1, 30])
+        self.assertEqual(len(remote.cancellations), 1)
+        report = __import__("json").loads((self.root / "out/execution.json").read_text())
+        self.assertIn("cancel unavailable", report["cancellation"])
+
+    def test_terminal_failure_does_not_collect_results(self):
+        remote = self.active_remote(d.Batch.State.FAILED)
+        with self.assertRaisesRegex(RuntimeError, "FAILED"):
+            self.run_remote(remote, sleeper=lambda _: None)
+        report = __import__("json").loads((self.root / "out/execution.json").read_text())
+        self.assertEqual(report["state"], "FAILED")
+        self.assertIn("error", report)
+        self.assertFalse((self.root / "out/output_manifest.json").exists())

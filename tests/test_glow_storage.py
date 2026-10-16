@@ -75,3 +75,15 @@ class StorageTests(unittest.TestCase):
     def test_duplicate_output_paths_fail(self):
         outputs=self.outputs()
         with self.assertRaises(ValueError): publish_outputs(self.client,self.uri,"identity",outputs+[outputs[0]],{})
+
+    def test_duplicate_basenames_keep_distinct_staged_content(self):
+        second = self.root / "other" / self.path.name
+        second.parent.mkdir()
+        second.write_bytes(b"different source")
+        inputs = [InputArtifact("association/0/bgen", self.path), InputArtifact("association/1/bgen", second)]
+        identity = input_identity(inputs, {})
+        staged = stage_inputs(self.client, self.uri, identity, inputs)
+        self.assertNotEqual(staged[0].uri, staged[1].uri)
+        self.assertNotEqual(staged[0].sha256, staged[1].sha256)
+        self.assertTrue(staged[0].uri.endswith("association/0/bgen"))
+        self.assertTrue(staged[1].uri.endswith("association/1/bgen"))

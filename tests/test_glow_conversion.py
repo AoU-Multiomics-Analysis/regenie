@@ -54,3 +54,18 @@ class ConversionTests(unittest.TestCase):
         self.pvar.write_text("#CHROM POS ID REF ALT\n1 2 v1 A G\n2 3 v1 C T\n")
         with self.assertRaisesRegex(ValueError,"duplicate"):
             self.convert()
+
+    def test_sources_with_identical_basenames_keep_separate_outputs(self):
+        import shutil
+        other = self.root / "second"
+        other.mkdir()
+        for path in (self.pgen, self.pvar, self.psam):
+            shutil.copyfile(path, other / path.name)
+        with patch("scripts.glow.convert.subprocess.run", side_effect=self.fake_export):
+            first = self.convert(out_dir=self.root / "src0", source_index=0)
+            second = self.convert(pgen=other / self.pgen.name, pvar=other / self.pvar.name,
+                                  psam=other / self.psam.name, out_dir=self.root / "src1", source_index=1)
+        self.assertEqual(first.bgen.name, second.bgen.name)
+        self.assertNotEqual(first.bgen, second.bgen)
+        self.assertEqual(json.loads(first.report.read_text())["source_index"], 0)
+        self.assertEqual(json.loads(second.report.read_text())["source_index"], 1)

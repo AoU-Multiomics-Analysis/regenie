@@ -9,6 +9,16 @@ import scipy.stats as stats
 import statsmodels.api as sm
 from scripts.glow.genotypes import read_dosages, retain_usable_variants
 
+def quantitative_reference(y, covariate, dosage, offset):
+    # Glow offsets use residual phenotype units. This independent OLS check
+    # requires an offset orthogonal to the intercept and covariates.
+    design = np.column_stack([np.ones(len(y)), covariate])
+    if not np.allclose(design.T @ offset, 0, atol=1e-10):
+        raise ValueError("Reference offset must be orthogonal to covariates")
+    scale = np.sqrt(sm.OLS(y, design).fit().scale)
+    fit = sm.OLS(y - scale * offset, np.column_stack([design, dosage])).fit()
+    return np.asarray([fit.params[-1], fit.bse[-1], fit.pvalues[-1]])
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ("bgen","sample","variants","sample-map","expected","out-dir"):
@@ -39,15 +49,16 @@ def main(argv=None):
         cov=np.linspace(-1,1,n)
         x=np.asarray([(i*7%19)/10 for i in range(n)])
         offset=.1*np.cos(np.arange(n))
+        offset -= sm.OLS(offset, np.column_stack([np.ones(n), cov])).fit().fittedvalues
         y=.4*x+.2*cov+np.sin(np.arange(n)*1.7)
         pheno=pd.DataFrame({"qt":y},index=ids)
         covariates=pd.DataFrame({"age":cov},index=ids)
         offsets=pd.DataFrame({"qt":offset},index=ids)
         genotypes=spark.createDataFrame([("1",1,"v",x.tolist())],"contigName string, start long, variant_id string, values array<double>")
         output=glow.gwas.linear_regression(genotypes,pheno,covariates,offset_df=offsets).first()
-        fit=sm.OLS(y-offset,np.column_stack([np.ones(n),cov,x])).fit()
+        expected_quantitative = quantitative_reference(y, cov, x, offset)
         np.testing.assert_allclose([output.effect,output.stderror,output.pvalue],
-                                   [fit.params[-1],fit.bse[-1],fit.pvalues[-1]],rtol=1e-6,atol=1e-8)
+                                   expected_quantitative,rtol=1e-6,atol=1e-8)
         binary=np.asarray([(i*13%23)>10 for i in range(n)],dtype=float)
         labels=pd.DataFrame({"bt":binary},index=ids)
         binary_offsets=pd.DataFrame({"bt":offset},index=ids)
