@@ -1,0 +1,38 @@
+{
+  "GlowRegenieDataproc.step1_genotypes": {
+    "pgen": "gs://EXAMPLE-INPUT-BUCKET/model/whole.pgen",
+    "pvar": "gs://EXAMPLE-INPUT-BUCKET/model/whole.pvar",
+    "psam": "gs://EXAMPLE-INPUT-BUCKET/model/whole.psam"
+  },
+  "GlowRegenieDataproc.step1_variant_ids": "gs://EXAMPLE-INPUT-BUCKET/model/common-variants.txt",
+  "GlowRegenieDataproc.association_genotypes": [
+    {
+      "pgen": "gs://EXAMPLE-INPUT-BUCKET/association/whole.pgen",
+      "pvar": "gs://EXAMPLE-INPUT-BUCKET/association/whole.pvar",
+      "psam": "gs://EXAMPLE-INPUT-BUCKET/association/whole.psam"
+    }
+  ],
+  "GlowRegenieDataproc.phenotypes": "gs://EXAMPLE-INPUT-BUCKET/phenotypes.tsv",
+  "GlowRegenieDataproc.covariates": "gs://EXAMPLE-INPUT-BUCKET/covariates.tsv",
+  "GlowRegenieDataproc.trait_type": "binary",
+  "GlowRegenieDataproc.phenotype_columns": "disease_a,disease_b",
+  "GlowRegenieDataproc.covariate_columns": "age,sex,pc1,pc2",
+  "GlowRegenieDataproc.categorical_covariates": "sex",
+  "GlowRegenieDataproc.missing_data_policy": "error",
+  "GlowRegenieDataproc.region": "us-central1",
+  "GlowRegenieDataproc.subnetwork_uri": "projects/example-project/regions/us-central1/subnetworks/example-subnet",
+  "GlowRegenieDataproc.staging_bucket": "example-spark-staging",
+  "GlowRegenieDataproc.staging_prefix": "gs://example-spark-staging/regenie",
+  "GlowRegenieDataproc.run_id": "example-binary-001",
+  "GlowRegenieDataproc.docker_image": "us-central1-docker.pkg.dev/example-project/analysis/regenie-glow@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "GlowRegenieDataproc.spark_image": "us-central1-docker.pkg.dev/example-project/analysis/regenie-glow@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "GlowRegenieDataproc.batch_size": 50,
+  "GlowRegenieDataproc.variants_per_block": 1000,
+  "GlowRegenieDataproc.sample_block_count": 10,
+  "GlowRegenieDataproc.min_mac": 5,
+  "GlowRegenieDataproc.seed": 1,
+  "GlowRegenieDataproc.binary_encoding": "01",
+  "GlowRegenieDataproc.min_cases": 10,
+  "GlowRegenieDataproc.min_controls": 10,
+  "GlowRegenieDataproc.firth_threshold": 0.01
+}

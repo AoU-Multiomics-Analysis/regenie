@@ -12,7 +12,13 @@ ROOT=Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.environ.get("CROMWELL_JAR"),"Set CROMWELL_JAR to run the engine localization test")
 class GlowCromwellTests(unittest.TestCase):
-    def test_source_arrays_and_generated_outputs_are_localized(self):
+    def test_local_source_arrays_and_generated_outputs_are_localized(self):
+        self.run_probe(local=True)
+
+    def test_dataproc_source_arrays_and_generated_outputs_are_localized(self):
+        self.run_probe(local=False)
+
+    def run_probe(self,local):
         with tempfile.TemporaryDirectory(prefix="glow-cromwell-") as directory:
             root=Path(directory); source=root/"source"; source.mkdir()
             for index in range(2):
@@ -52,11 +58,14 @@ else:
     for name in ('execution.json','output_manifest.json'): (out/name).write_text('{}')
 print('COMMAND_FILE_LOCALIZATION_OK',mode)
 """)
-            wdl=(ROOT/"workflows/glow_regenie.wdl").read_text()
-            wdl=re.sub(r"(?m)^\s+docker: docker_image\n","\n",wdl)
-            for mode in ("prepare","convert","controller"):
-                wdl=wdl.replace("python3 -m scripts.glow."+mode,shlex.quote(sys.executable)+" "+shlex.quote(str(probe))+" --probe-task "+mode)
-            workflow=root/"probe.wdl"; workflow.write_text(wdl)
+            for name in ("glow_regenie.wdl","glow_regenie_dataproc.wdl"):
+                wdl=(ROOT/"workflows"/name).read_text()
+                wdl=re.sub(r"(?m)^\s+docker: docker_image\n","\n",wdl)
+                for mode in ("prepare","convert","controller","local_runner"):
+                    wdl=wdl.replace("python3 -m scripts.glow."+mode,shlex.quote(sys.executable)+" "+shlex.quote(str(probe))+" --probe-task "+mode)
+                (root/name).write_text(wdl)
+            workflow=root/("glow_regenie.wdl" if local else "glow_regenie_dataproc.wdl")
+            namespace="GlowRegenie" if local else "GlowRegenieDataproc"
             genotypes=[{ext:str(source/f"source{i}.{ext}") for ext in ("pgen","pvar","psam")} for i in range(2)]
             values={"step1_genotypes":genotypes[0],"step1_variant_ids":str(source/"variants"),
                     "association_genotypes":genotypes,"phenotypes":str(source/"phenotypes"),
@@ -64,7 +73,10 @@ print('COMMAND_FILE_LOCALIZATION_OK',mode)
                     "trait_type":"quantitative","docker_image":"test","spark_image":"test","project":"project-one",
                     "region":"us-central1","subnetwork_uri":"test","service_account":"test","staging_bucket":"test",
                     "staging_prefix":"gs://test/run","run_id":"test-run"}
-            inputs=root/"inputs.json"; inputs.write_text(json.dumps({"GlowRegenie."+k:v for k,v in values.items()}))
+            if local:
+                for name in ("spark_image","project","region","subnetwork_uri","service_account","staging_bucket","staging_prefix","run_id"):
+                    values.pop(name)
+            inputs=root/"inputs.json"; inputs.write_text(json.dumps({namespace+"."+k:v for k,v in values.items()}))
             config=root/"cromwell.conf"; config.write_text('include required(classpath("application"))\nbackend.default="Local"\ncall-caching.enabled=false\n')
             metadata=root/"metadata.json"
             result=subprocess.run(["java","-Dconfig.file="+str(config),"-jar",os.environ["CROMWELL_JAR"],"run",str(workflow),"-i",str(inputs),"-m",str(metadata)],
@@ -72,8 +84,8 @@ print('COMMAND_FILE_LOCALIZATION_OK',mode)
             self.assertEqual(result.returncode,0,(result.stdout+result.stderr)[-12000:])
             output=json.loads(metadata.read_text())
             self.assertEqual(output["status"],"Succeeded")
-            self.assertEqual(len(output["outputs"]["GlowRegenie.associations"]),2)
-            self.assertEqual(len(output["outputs"]["GlowRegenie.association_sets"]),2)
-            logs=output["outputs"]["GlowRegenie.conversion_logs"]
+            self.assertEqual(len(output["outputs"][namespace+".associations"]),2)
+            self.assertEqual(len(output["outputs"][namespace+".association_sets"]),2)
+            logs=output["outputs"][namespace+".conversion_logs"]
             self.assertEqual([Path(p).read_text() for p in logs],["model0","association0","association1"])
-            self.assertTrue(all(Path(p).is_file() for p in output["outputs"]["GlowRegenie.associations"]))
+            self.assertTrue(all(Path(p).is_file() for p in output["outputs"][namespace+".associations"]))

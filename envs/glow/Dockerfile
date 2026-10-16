@@ -52,7 +52,7 @@ WORKDIR /work
 USER 1099:1099
 CMD ["python", "-m", "scripts.glow.controller", "--help"]
 
-FROM production AS ci-test
+FROM production AS terra-local
 USER root
 RUN micromamba install --yes --strict-channel-priority --name base --channel conda-forge pyspark=3.5.1 openjdk=17.0.15 \
     && micromamba clean --all --yes \
@@ -61,5 +61,10 @@ RUN micromamba install --yes --strict-channel-priority --name base --channel con
 ENV JAVA_HOME="/opt/conda/lib/jvm" \
     SPARK_HOME="/opt/conda/lib/python3.11/site-packages/pyspark" \
     SPARK_LOCAL_IP="127.0.0.1"
+RUN micromamba list --explicit --name base > /opt/glow/environment.explicit.txt \
+    && python -m pip freeze > /opt/glow/python-packages.txt
 USER 1099:1099
+CMD ["python", "-m", "scripts.glow.local_runner", "--help"]
+
+FROM terra-local AS ci-test
 CMD ["python", "-m", "scripts.glow.smoke_test", "--work-dir", "/work/smoke"]

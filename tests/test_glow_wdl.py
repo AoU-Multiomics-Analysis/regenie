@@ -20,16 +20,20 @@ class GlowWdlTests(unittest.TestCase):
         self.assertEqual(checker.workflow_write_errors(doc),[])
         self.assertEqual(checker.manifest_output_errors(doc),[])
         self.assertEqual(doc.workflow.name,"GlowRegenie")
+        inputs={item.name for item in doc.workflow.inputs}
+        self.assertFalse(inputs & {"project","service_account","region","subnetwork_uri","spark_image","staging_bucket","run_id"})
+        for name in ("analysis_cpu","analysis_memory_gb","spark_driver_memory_gb","spark_parallelism"):
+            self.assertIn(name,inputs)
 
     def test_command_time_localization_and_shell_quoting(self):
-        doc=WDL.load(str(ROOT/"workflows/glow_regenie.wdl"))
+        docs=[WDL.load(str(ROOT/"workflows"/name)) for name in ("glow_regenie.wdl","glow_regenie_dataproc.wdl")]
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             localized=root/"localized ' $(touch INJECTED)"; localized.mkdir()
             for name in ("data.pgen","data.pvar","data.psam","phenotypes.tsv","sample_map.tsv","covariates.tsv",
                          "batches.tsv","model.bgen","model.sample","variants.tsv"):
                 (localized/name).write_text("data")
-            for task in doc.tasks:
+            for task in [task for doc in docs for task in doc.tasks]:
                 with self.subTest(task=task.name):
                     supplied={}
                     for declaration in task.inputs:
@@ -66,9 +70,9 @@ for index,flag in enumerate(args[:-1]):
         assert rows and all(pathlib.Path(row).is_file() for row in rows)
 print('LOCALIZATION_OK')
 """)
-                    for module in ("prepare","convert","controller"):
+                    for module in ("prepare","convert","controller","local_runner"):
                         command=command.replace("python3 -m scripts.glow."+module,shlex.quote(sys.executable)+" "+shlex.quote(str(probe)))
-                    work=root/task.name; work.mkdir()
+                    work=root/task.name; work.mkdir(exist_ok=True)
                     result=subprocess.run(["bash","-c",command],cwd=work,text=True,capture_output=True)
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                     self.assertIn("LOCALIZATION_OK",result.stdout)

@@ -25,9 +25,11 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}-glow"
           echo "name=$image" >> "$GITHUB_OUTPUT"
           echo "tag=$image:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "local_tag=$image:local-sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - name: Build production and CI images on GitHub
         run: |
           docker build --platform linux/amd64 --target production --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-production .
+          docker build --platform linux/amd64 --target terra-local --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-local .
           docker build --platform linux/amd64 --target ci-test --build-arg PROJECT_REVISION="$GITHUB_SHA" -f envs/glow/Dockerfile -t glow-ci .
       - name: Run synthetic Spark tests
         run: |
@@ -52,8 +54,13 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          LOCAL_IMAGE_TAG: ${{ steps.image.outputs.local_tag }}
         run: |
           docker tag glow-production "$IMAGE_TAG"
           docker push "$IMAGE_TAG"
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_TAG")
-          echo "Tested production image: $digest" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tested Dataproc image: $digest" >> "$GITHUB_STEP_SUMMARY"
+          docker tag glow-local "$LOCAL_IMAGE_TAG"
+          docker push "$LOCAL_IMAGE_TAG"
+          local_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$LOCAL_IMAGE_TAG")
+          echo "Tested Terra local image: $local_digest" >> "$GITHUB_STEP_SUMMARY"

@@ -74,9 +74,9 @@ def spark_command(master):
             "--conf","spark.executorEnv.OMP_NUM_THREADS=1","--conf","spark.ui.enabled=false",
             "--jars","/opt/glow/jars/glow-assembly.jar"]
 
-def read_associations(prefix):
-    manifest=json.loads((prefix/"outputs.json").read_text())
-    frames=[pd.read_csv(local_uri(row["uri"]),sep="\t") for row in manifest["outputs"] if row["kind"]=="association"]
+def read_associations(prefix,collected=False):
+    manifest=json.loads((prefix/("output_manifest.json" if collected else "outputs.json")).read_text())
+    frames=[pd.read_csv(prefix/row["relative_path"] if collected else local_uri(row["uri"]),sep="\t") for row in manifest["outputs"] if row["kind"]=="association"]
     frame=pd.concat(frames,ignore_index=True)
     if frame.empty or not frame.groupby("phenotype").pvalue.apply(lambda x:np.isfinite(x).any()).all():
         raise ValueError("No finite association results for a phenotype")
@@ -130,11 +130,24 @@ def main(argv=None):
             if name in results:
                 pd.testing.assert_frame_equal(results[name],result,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
             else: results[name]=result
+    # Exercise the exact single-VM CLI used by the WDL, including file lists and collection.
+    for name,options in profiles:
+        cohort=prepared[name]; output=root/(name+"_terra_local")
+        command=[sys.executable,"-m","scripts.glow.local_runner","--cpu","2","--memory-gb","4","--driver-memory-gb","1",
+                 "--parallelism","2","--shuffle-partitions","2","--out-dir",str(output)]
+        for flag,path in (("model-bgen",model.bgen),("model-sample",model.sample),("model-variants",model.variants),
+                          ("sample-map",cohort.sample_map),("phenotypes",cohort.phenotypes),("covariates",cohort.covariates),("phenotype-batches",cohort.batches)):
+            command += ["--"+flag,str(path)]
+        for kind in ("bgen","sample","variants"):
+            file_list=root/(name+"_"+kind+".txt"); file_list.write_text(str(getattr(association,kind))+"\n")
+            command += ["--association-"+kind+"-list",str(file_list)]
+        run(command+scientific_arguments(options),root/(name+"_terra_local.log"))
+        pd.testing.assert_frame_equal(results[name],read_associations(output,collected=True),check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
     first=results["binary01"].copy(); second=results["binary12"].copy()
     second["phenotype"]=second.phenotype.str.removesuffix("_12")
     pd.testing.assert_frame_equal(first,second,check_dtype=False,check_exact=False,rtol=1e-6,atol=1e-8)
     (root/"summary.json").write_text(json.dumps({"status":"passed","samples":240,"variants":200,
-                  "profiles":list(results),"separate_worker_processes":args.spark_master is None,"rtol":1e-6,"atol":1e-8},indent=2)+"\n")
+                  "profiles":list(results),"single_vm_cli":True,"separate_worker_processes":args.spark_master is None,"rtol":1e-6,"atol":1e-8},indent=2)+"\n")
     LOG.info("Synthetic Spark tests passed")
     return 0
 if __name__=="__main__": raise SystemExit(main())

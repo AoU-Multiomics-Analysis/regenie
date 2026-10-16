@@ -32,3 +32,14 @@ class ImageTests(unittest.TestCase):
         for master in ("local-cluster[1,1,1536]", "local-cluster[2,1,1536]"):
             command = spark_command(master)
             self.assertEqual(command[command.index("--executor-memory") + 1], "1g")
+
+    def test_local_image_contains_spark_and_is_tested_before_publication(self):
+        dockerfile=(ROOT/'envs/glow/Dockerfile').read_text()
+        self.assertIn('FROM production AS terra-local',dockerfile)
+        self.assertIn('pyspark=3.5.1 openjdk=17.0.15',dockerfile)
+        self.assertIn('FROM terra-local AS ci-test',dockerfile)
+        workflow=yaml.safe_load((ROOT/'.github/workflows/glow-image.yml').read_text())
+        steps=workflow['jobs']['build-test-publish']['steps']
+        publish=next(s for s in steps if s.get('name')=='Publish tested production image')['run']
+        self.assertIn('docker push "$LOCAL_IMAGE_TAG"',publish)
+        self.assertIn('docker tag glow-local "$LOCAL_IMAGE_TAG"',publish)
