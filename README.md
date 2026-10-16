@@ -12,6 +12,9 @@ Run REGENIE 4.1.2 with PLINK 2 PGEN, PVAR, and PSAM inputs in Terra.
 The workflow uses WDL 1.0. It supports quantitative traits and binary traits.
 Select one trait type for each run.
 
+A separate [Glow/Spark workflow](docs/glow-terra.md) runs through WDL on Terra
+and Dataproc Serverless. Its cloud validation is pending.
+
 ## Workflow
 
 1. `PrepareBatches` validates phenotype names and divides them into batches.
