@@ -106,3 +106,9 @@ class OutputArtifact:
     relative_path: str
     sha256: str
     size_bytes: int
+
+# Glow reshapes NumPy arrays through pandas when it creates Spark tables.
+SPARK_ARROW_PROPERTIES = {
+    "spark.sql.execution.arrow.pyspark.enabled": "true",
+    "spark.sql.execution.arrow.pyspark.fallback.enabled": "false",
+}

@@ -29,6 +29,8 @@ class ControllerTests(unittest.TestCase):
         self.assertIn("--trait-type",list(batch.pyspark_batch.args))
         self.assertNotIn("--config",list(batch.pyspark_batch.args))
         self.assertEqual(batch.runtime_config.properties["spark.dynamicAllocation.maxExecutors"],"4")
+        self.assertEqual(batch.runtime_config.properties["spark.sql.execution.arrow.pyspark.enabled"],"true")
+        self.assertEqual(batch.runtime_config.properties["spark.sql.execution.arrow.pyspark.fallback.enabled"],"false")
     def test_invalid_cloud_settings_fail_before_clients(self):
         for changes in ({"run_id":"../bad"},{"spark_image":"ghcr.io/org/glow@sha256:"+DIGEST},{"poll_seconds":1},
                         {"driver_cores":1},{"driver_memory_mb":50000},{"staging_prefix":"gs://bucket"},

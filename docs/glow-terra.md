@@ -8,7 +8,8 @@ Spark fits models and runs association tests in phenotype batches.
 **Validation status: Not tested on Terra.**
 Local unit, file-localization, and WDL checks are available.
 The GitHub image build, real PLINK/Spark tests, and Cromwell probes must pass
-before the image can be used. No tested image digest is available yet.
+before the image can be used. A successful image run publishes its digest in
+the GitHub Actions summary.
 A complete Terra run is a separate acceptance test. No cloud jobs were submitted.
 
 ## Scope and scientific choices

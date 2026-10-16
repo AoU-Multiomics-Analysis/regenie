@@ -10,7 +10,7 @@ from pathlib import Path
 from google.cloud import dataproc_v1 as dataproc
 from google.cloud import storage
 from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, NotFound, ServiceUnavailable, InternalServerError
-from .contracts import GLOW_COMMIT, LOG, InputArtifact, add_scientific_arguments, options_from_args, require_local_file, scientific_arguments, setup_logging
+from .contracts import SPARK_ARROW_PROPERTIES, GLOW_COMMIT, LOG, InputArtifact, add_scientific_arguments, options_from_args, require_local_file, scientific_arguments, setup_logging
 from .storage import input_identity, stage_inputs, collect_outputs, split_gs
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ def make_batch(options,staged,science,identity_sha256):
         for kind in ("bgen","sample","variants"): args += ["--association-"+kind,by_name[f"association/{index}/{kind}"]]
     run_uri=options.staging_prefix.rstrip("/")+"/"+options.run_id
     args += ["--output-prefix",run_uri,"--identity-sha256",identity_sha256]+scientific_arguments(science)
-    properties={"spark.dynamicAllocation.enabled":"true","spark.dynamicAllocation.minExecutors":str(options.min_executors),
+    properties={**SPARK_ARROW_PROPERTIES,"spark.dynamicAllocation.enabled":"true","spark.dynamicAllocation.minExecutors":str(options.min_executors),
                 "spark.dynamicAllocation.maxExecutors":str(options.max_executors),"spark.executor.instances":str(options.min_executors),
                 "spark.pyspark.python":"/opt/conda/bin/python","spark.pyspark.driver.python":"/opt/conda/bin/python"}
     for role in ("driver","executor"):

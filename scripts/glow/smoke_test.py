@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from .contracts import ScientificOptions, scientific_arguments, setup_logging, LOG
+from .contracts import SPARK_ARROW_PROPERTIES, ScientificOptions, scientific_arguments, setup_logging, LOG
 from .prepare import prepare_cohort
 from .convert import convert_pgen
 from .storage import local_uri
@@ -65,7 +65,8 @@ def generate_data(root):
 
 def spark_command(master):
     workers=1 if master=="local[2]" else int(master.split("[",1)[1].split(",",1)[0])
-    return ["spark-submit","--master",master,"--driver-memory","1g","--executor-memory","1g",
+    arrow_args=[argument for key,value in SPARK_ARROW_PROPERTIES.items() for argument in ("--conf",key+"="+value)]
+    return ["spark-submit","--master",master,"--driver-memory","1g","--executor-memory","1g",*arrow_args,
             "--conf","spark.dynamicAllocation.enabled=false","--conf",f"spark.cores.max={workers}",
             "--conf","spark.executor.cores=1","--conf","spark.executor.memoryOverhead=384m",
             "--conf","spark.rpc.netty.dispatcher.numThreads=2","--conf","spark.shuffle.io.serverThreads=2",
