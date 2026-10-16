@@ -43,3 +43,25 @@ class ImageTests(unittest.TestCase):
         publish=next(s for s in steps if s.get('name')=='Publish tested production image')['run']
         self.assertIn('docker push "$LOCAL_IMAGE_TAG"',publish)
         self.assertIn('docker tag glow-local "$LOCAL_IMAGE_TAG"',publish)
+
+    def test_image_change_gate_skips_wdl_edits_and_detects_included_scripts(self):
+        import os
+        import subprocess
+        import tempfile
+        workflow=yaml.safe_load((ROOT/'.github/workflows/glow-image.yml').read_text())
+        steps=workflow['jobs']['build-test-publish']['steps']
+        gate=next(step for step in steps if step.get('id')=='changes')['run']
+        with tempfile.TemporaryDirectory() as directory:
+            repo=Path(directory); (repo/'scripts/glow').mkdir(parents=True)
+            script=repo/'scripts/glow/app.py'; script.write_text('one')
+            wdl=repo/'workflow.wdl'; wdl.write_text('one')
+            def git(*args):
+                return subprocess.check_output(['git','-c','user.name=Test','-c','user.email=test@example.invalid',*args],cwd=repo,text=True).strip()
+            git('init','-q'); git('add','.'); git('commit','-qm','initial'); before=git('rev-parse','HEAD')
+            for changed,expected in ((wdl,'false'),(script,'true')):
+                changed.write_text('two'); git('add','.'); git('commit','-qm','change'); after=git('rev-parse','HEAD')
+                output=repo/'output'; output.unlink(missing_ok=True)
+                result=subprocess.run(['bash','-e','-o','pipefail','-c',gate],cwd=repo,text=True,capture_output=True,
+                                      env=dict(os.environ,EVENT_NAME='pull_request',BEFORE_SHA=before,AFTER_SHA=after,GITHUB_OUTPUT=str(output)))
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertIn('build='+expected,output.read_text()); before=after
